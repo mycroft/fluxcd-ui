@@ -39,6 +39,7 @@ func main() {
 	subjectPrefix := flag.String("subject-prefix", "fluxcd-ui:", "prefix added to user and group names before checking RBAC")
 	fluxNamespace := flag.String("flux-namespace", "flux-system", "namespace of the Flux controllers, whose logs the drawer shows")
 	controllerLogs := flag.Bool("controller-logs", true, "offer the Flux controllers' logs about an object in its drawer (requires reading pods and pods/log in --flux-namespace)")
+	artifactBrowser := flag.Bool("artifact-browser", true, "offer to browse the files of a source's artifact (anyone who can reach the UI can then read them)")
 	diffEnabled := flag.Bool("diff", true, "offer to diff a Kustomization's source with the cluster (requires reaching source-controller's artifacts, and read access to the managed objects)")
 	managedStatus := flag.Bool("managed-objects-status", true, "show the health of the objects a Kustomization or HelmRelease manages (requires read access to them, e.g. the built-in view ClusterRole)")
 	showVersion := flag.Bool("version", false, "print the version and exit")
@@ -63,6 +64,7 @@ func main() {
 		Logs:            *controllerLogs,
 		ManagedStatus:   *managedStatus,
 		Diff:            *diffEnabled,
+		ArtifactBrowser: *artifactBrowser,
 	}
 	if err := checkAuthorization(*authorization, *userHeader, *subjectPrefix); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -150,7 +152,9 @@ func run(addr string, opts web.Options, authorization, subjectPrefix, fluxNamesp
 	broker.Close() // ends SSE streams so Shutdown does not wait on them
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	return httpSrv.Shutdown(shutdownCtx)
+	err = httpSrv.Shutdown(shutdownCtx)
+	st.Close()
+	return err
 }
 
 func newLogger(level, format string) (*slog.Logger, error) {

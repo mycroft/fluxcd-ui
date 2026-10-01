@@ -5,6 +5,7 @@ package store
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fluxcd/pkg/apis/meta"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
@@ -23,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/mycroft/fluxcd-ui/internal/artifact"
 	"github.com/mycroft/fluxcd-ui/internal/diff"
 	"github.com/mycroft/fluxcd-ui/internal/flux"
 )
@@ -51,6 +54,8 @@ type Store struct {
 	fluxNamespace string
 	health        healthCache // computed health of managed objects
 	differ        *diff.Differ
+	artifacts     *artifact.Fetcher
+	artifactCache *artifact.Cache // extracted artifacts, for browsing
 	broker        *Broker
 	log           *slog.Logger
 
@@ -62,7 +67,9 @@ type Store struct {
 // installed and already synced. It is meant for tests.
 func New(c client.Client, broker *Broker, installed ...string) *Store {
 	s := &Store{reader: c, writer: c, broker: broker, log: slog.Default(), states: map[string]*KindState{}}
-	s.differ = diff.New(c, c, http.DefaultClient, nil, "")
+	s.artifacts = artifact.NewFetcher(http.DefaultClient, nil)
+	s.differ = diff.New(c, c, s.artifacts, "")
+	s.artifactCache = artifact.NewCache(s.artifacts, "")
 	for _, k := range flux.Kinds {
 		s.states[k.ID] = &KindState{}
 	}
@@ -121,9 +128,11 @@ func NewForCluster(cfg *rest.Config, broker *Broker, fluxNamespace string, log *
 		if hc, err = rest.HTTPClientFor(cfg); err != nil {
 			return nil, fmt.Errorf("creating HTTP client: %w", err)
 		}
-		rewrite = func(u string) (string, error) { return diff.ProxyURL(cfg.Host, u) }
+		rewrite = func(u string) (string, error) { return artifact.ProxyURL(cfg.Host, u) }
 	}
-	s.differ = diff.New(s.reader, s.writer, hc, rewrite, "")
+	s.artifacts = artifact.NewFetcher(hc, rewrite)
+	s.differ = diff.New(s.reader, s.writer, s.artifacts, "")
+	s.artifactCache = artifact.NewCache(s.artifacts, "")
 	var groupVersions []string
 	for _, k := range flux.Kinds {
 		if gv := k.GVK.GroupVersion().String(); installed[k.ID] && !slices.Contains(groupVersions, gv) {
@@ -298,4 +307,41 @@ func discoverInstalled(cfg *rest.Config) (map[string]bool, error) {
 // the cluster.
 func (s *Store) DiffKustomization(ctx context.Context, namespace, name string) (*diff.Result, error) {
 	return s.differ.Kustomization(ctx, namespace, name)
+}
+
+// SourceArtifact returns the artifact a source object holds.
+func (s *Store) SourceArtifact(ctx context.Context, k flux.Kind, namespace, name string) (*meta.Artifact, error) {
+	obj := k.NewObject()
+	if err := s.reader.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, obj); err != nil {
+		return nil, err
+	}
+	a := artifact.Of(obj)
+	if a == nil {
+		return nil, errors.New(k.GVK.Kind + " " + namespace + "/" + name + " has no artifact")
+	}
+	return a, nil
+}
+
+// ArtifactFiles lists the files of a source's artifact.
+func (s *Store) ArtifactFiles(ctx context.Context, k flux.Kind, namespace, name string) (*meta.Artifact, []artifact.File, error) {
+	a, err := s.SourceArtifact(ctx, k, namespace, name)
+	if err != nil {
+		return nil, nil, err
+	}
+	files, err := s.artifactCache.Files(ctx, a)
+	return a, files, err
+}
+
+// ArtifactFile returns one file of a source's artifact.
+func (s *Store) ArtifactFile(ctx context.Context, k flux.Kind, namespace, name, path string) (*artifact.Content, error) {
+	a, err := s.SourceArtifact(ctx, k, namespace, name)
+	if err != nil {
+		return nil, err
+	}
+	return s.artifactCache.Read(ctx, a, path)
+}
+
+// Close releases the store's temporary files.
+func (s *Store) Close() {
+	s.artifactCache.Close()
 }

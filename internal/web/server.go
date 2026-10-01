@@ -18,8 +18,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fluxcd/pkg/apis/meta"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
+	"github.com/mycroft/fluxcd-ui/internal/artifact"
 	"github.com/mycroft/fluxcd-ui/internal/authz"
 	"github.com/mycroft/fluxcd-ui/internal/diff"
 	"github.com/mycroft/fluxcd-ui/internal/flux"
@@ -46,6 +48,8 @@ type Backend interface {
 	ControllerLogs(ctx context.Context, k flux.Kind, namespace, name string) ([]store.LogLine, error)
 	ManagedHealth(ctx context.Context, entries []flux.InventoryEntry) map[string]store.ObjectHealth
 	DiffKustomization(ctx context.Context, namespace, name string) (*diff.Result, error)
+	ArtifactFiles(ctx context.Context, k flux.Kind, namespace, name string) (*meta.Artifact, []artifact.File, error)
+	ArtifactFile(ctx context.Context, k flux.Kind, namespace, name, path string) (*artifact.Content, error)
 }
 
 // Options configures a Server.
@@ -69,6 +73,8 @@ type Options struct {
 	ManagedStatus bool
 	// Diff offers to compare a Kustomization's source with the cluster.
 	Diff bool
+	// ArtifactBrowser offers to browse the files of a source's artifact.
+	ArtifactBrowser bool
 }
 
 // Server is the HTTP handler of the UI.
@@ -117,6 +123,8 @@ func New(backend Backend, broker *store.Broker, opts Options, log *slog.Logger) 
 	s.mux.HandleFunc("GET /objects/{kind}/{namespace}/{name}/logs", s.handleLogs)
 	s.mux.HandleFunc("GET /objects/{kind}/{namespace}/{name}/inventory", s.handleInventory)
 	s.mux.HandleFunc("GET /objects/kustomizations/{namespace}/{name}/diff", s.handleDiff)
+	s.mux.HandleFunc("GET /objects/{kind}/{namespace}/{name}/artifact", s.handleArtifact)
+	s.mux.HandleFunc("GET /objects/{kind}/{namespace}/{name}/artifact/file", s.handleArtifactFile)
 	s.mux.HandleFunc("POST /objects/{kind}/{namespace}/{name}/{action}", s.handleAction)
 	s.mux.HandleFunc("GET /events", s.handleEvents)
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
@@ -300,6 +308,7 @@ type drawer struct {
 	Actions   bool        // actions are enabled
 	Logs      bool        // controller logs are offered
 	Diff      bool        // a source diff is offered
+	Browse    bool        // the source artifact browser is offered
 	Can       permissions // what the current user may do on this object
 	OOB       bool        // render the header as an out-of-band swap
 }
@@ -342,6 +351,7 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request) {
 	default:
 		d.Detail = detail
 		d.Events = s.backend.Events(r.Context(), s.backend.Related(r.Context(), k, d.Namespace, d.Name)...)
+		d.Browse = s.opts.ArtifactBrowser && detail.HasArtifact
 		if detail.HasInventory && !d.OOB {
 			d.Inventory = newInventoryView(objectPath(k, d.Namespace, d.Name), detail, s.opts.ManagedStatus, nil)
 		}
@@ -569,6 +579,54 @@ func (s *Server) handleDiff(w http.ResponseWriter, r *http.Request) {
 		s.log.Warn("diffing kustomization", "namespace", r.PathValue("namespace"), "name", r.PathValue("name"), "err", v.Err)
 	}
 	s.render(w, http.StatusOK, "diff", v)
+}
+
+type artifactView struct {
+	Artifact *meta.Artifact
+	Tree     *treeNode
+	Count    int
+	Total    int64
+	Err      error
+}
+
+// handleArtifact serves the file tree of a source's artifact.
+func (s *Server) handleArtifact(w http.ResponseWriter, r *http.Request) {
+	k, ok := flux.KindByID(r.PathValue("kind"))
+	if !ok || !s.opts.ArtifactBrowser {
+		http.NotFound(w, r)
+		return
+	}
+	namespace, name := r.PathValue("namespace"), r.PathValue("name")
+	var v artifactView
+	var files []artifact.File
+	v.Artifact, files, v.Err = s.backend.ArtifactFiles(r.Context(), k, namespace, name)
+	if v.Err != nil {
+		s.log.Warn("listing artifact files", "kind", k.ID, "namespace", namespace, "name", name, "err", v.Err)
+	} else {
+		v.Tree, v.Count, v.Total = buildTree(objectPath(k, namespace, name)+"/artifact/file", files)
+	}
+	s.render(w, http.StatusOK, "artifact", v)
+}
+
+type artifactFileView struct {
+	Content *artifact.Content
+	Err     error
+}
+
+// handleArtifactFile serves one file of a source's artifact.
+func (s *Server) handleArtifactFile(w http.ResponseWriter, r *http.Request) {
+	k, ok := flux.KindByID(r.PathValue("kind"))
+	if !ok || !s.opts.ArtifactBrowser {
+		http.NotFound(w, r)
+		return
+	}
+	var v artifactFileView
+	v.Content, v.Err = s.backend.ArtifactFile(r.Context(), k, r.PathValue("namespace"), r.PathValue("name"), r.URL.Query().Get("path"))
+	status := http.StatusOK
+	if errors.Is(v.Err, artifact.ErrNotFound) {
+		status = http.StatusNotFound
+	}
+	s.render(w, status, "artifact-file", v)
 }
 
 func objectPath(k flux.Kind, namespace, name string) string {

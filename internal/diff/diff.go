@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"maps"
-	"net/http"
 	"os"
 	"slices"
 	"strings"
@@ -26,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/mycroft/fluxcd-ui/internal/artifact"
 	"github.com/mycroft/fluxcd-ui/internal/flux"
 )
 
@@ -83,16 +83,14 @@ func (r *Result) Pending() int {
 type Differ struct {
 	reader  client.Reader // cached Flux objects
 	client  client.Client // live objects, and ConfigMaps for substitutions
-	http    *http.Client
-	rewrite func(string) (string, error) // nil to fetch artifacts directly
+	fetcher *artifact.Fetcher
 	tempDir string
 	sem     chan struct{}
 }
 
-// New returns a Differ. rewrite, when set, maps artifact URLs to reachable
-// ones (see ProxyURL); tempDir holds builds ("" for the default).
-func New(reader client.Reader, c client.Client, hc *http.Client, rewrite func(string) (string, error), tempDir string) *Differ {
-	return &Differ{reader: reader, client: c, http: hc, rewrite: rewrite, tempDir: tempDir, sem: make(chan struct{}, maxConcurrentDiffs)}
+// New returns a Differ; tempDir holds builds ("" for the default).
+func New(reader client.Reader, c client.Client, fetcher *artifact.Fetcher, tempDir string) *Differ {
+	return &Differ{reader: reader, client: c, fetcher: fetcher, tempDir: tempDir, sem: make(chan struct{}, maxConcurrentDiffs)}
 }
 
 // Kustomization builds a Kustomization from the artifact its source holds,
@@ -111,7 +109,7 @@ func (d *Differ) Kustomization(ctx context.Context, namespace, name string) (*Re
 	if err := d.reader.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, ks); err != nil {
 		return nil, err
 	}
-	artifact, err := d.sourceArtifact(ctx, ks)
+	a, err := d.sourceArtifact(ctx, ks)
 	if err != nil {
 		return nil, err
 	}
@@ -122,13 +120,7 @@ func (d *Differ) Kustomization(ctx context.Context, namespace, name string) (*Re
 	}
 	defer os.RemoveAll(tmp)
 
-	artifactURL := artifact.URL
-	if d.rewrite != nil {
-		if artifactURL, err = d.rewrite(artifactURL); err != nil {
-			return nil, err
-		}
-	}
-	if err := fetchArtifact(ctx, d.http, artifactURL, artifact.Digest, tmp); err != nil {
+	if err := d.fetcher.Download(ctx, a, tmp+"/src"); err != nil {
 		return nil, err
 	}
 	desired, err := build(ctx, d.client, ks, tmp+"/src")
@@ -137,34 +129,28 @@ func (d *Differ) Kustomization(ctx context.Context, namespace, name string) (*Re
 	}
 
 	r := d.compare(ctx, ks, desired)
-	r.Revision, r.AppliedRevision = artifact.Revision, ks.Status.LastAppliedRevision
+	r.Revision, r.AppliedRevision = a.Revision, ks.Status.LastAppliedRevision
 	return r, nil
 }
 
 func (d *Differ) sourceArtifact(ctx context.Context, ks *kustomizev1.Kustomization) (*meta.Artifact, error) {
 	ref := ks.Spec.SourceRef
 	key := client.ObjectKey{Namespace: cmp.Or(ref.Namespace, ks.Namespace), Name: ref.Name}
-	var (
-		src      client.Object
-		artifact func() *meta.Artifact
-	)
+	var src client.Object
 	switch ref.Kind {
 	case sourcev1.GitRepositoryKind:
-		o := &sourcev1.GitRepository{}
-		src, artifact = o, func() *meta.Artifact { return o.Status.Artifact }
+		src = &sourcev1.GitRepository{}
 	case sourcev1.OCIRepositoryKind:
-		o := &sourcev1.OCIRepository{}
-		src, artifact = o, func() *meta.Artifact { return o.Status.Artifact }
+		src = &sourcev1.OCIRepository{}
 	case sourcev1.BucketKind:
-		o := &sourcev1.Bucket{}
-		src, artifact = o, func() *meta.Artifact { return o.Status.Artifact }
+		src = &sourcev1.Bucket{}
 	default:
 		return nil, fmt.Errorf("diffing Kustomizations sourced from a %s is not supported", ref.Kind)
 	}
 	if err := d.reader.Get(ctx, key, src); err != nil {
 		return nil, fmt.Errorf("getting %s %s: %w", ref.Kind, key, err)
 	}
-	a := artifact()
+	a := artifact.Of(src)
 	if a == nil {
 		return nil, fmt.Errorf("%s %s has no artifact yet", ref.Kind, key)
 	}

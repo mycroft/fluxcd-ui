@@ -57,6 +57,8 @@ type Detail struct {
 	// HasSource reports whether the object reconciles from another Flux
 	// object, which "reconcile with source" refreshes first.
 	HasSource bool
+	// HasArtifact reports whether the object (a source) holds an artifact.
+	HasArtifact bool
 	// HasInventory reports whether the kind keeps an inventory of the
 	// objects it applies (Kustomizations and HelmReleases).
 	HasInventory bool

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -21,6 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/mycroft/fluxcd-ui/internal/artifact"
 	"github.com/mycroft/fluxcd-ui/internal/diff"
 	"github.com/mycroft/fluxcd-ui/internal/flux"
 	"github.com/mycroft/fluxcd-ui/internal/store"
@@ -95,6 +97,31 @@ func (b testBackend) DiffKustomization(_ context.Context, namespace, name string
 		return testDiff, nil
 	}
 	return nil, errors.New("downloading the source artifact: connection refused")
+}
+
+// testArtifactFiles is what testBackend serves as an artifact's files.
+var testArtifactFiles = []artifact.File{
+	{Path: "README.md", Size: 120},
+	{Path: "apps/deployment.yaml", Size: 2048},
+	{Path: "apps/base/kustomization.yaml", Size: 64},
+}
+
+func (b testBackend) ArtifactFiles(_ context.Context, k flux.Kind, _, _ string) (*meta.Artifact, []artifact.File, error) {
+	if k.ID != "gitrepositories" {
+		return nil, nil, errors.New("HelmRelease apps/podinfo has no artifact")
+	}
+	return &meta.Artifact{Revision: "main@sha1:cb89c25f8d709a17d3800304fad747848f3a42cc"}, testArtifactFiles, nil
+}
+
+func (b testBackend) ArtifactFile(_ context.Context, _ flux.Kind, _, _, path string) (*artifact.Content, error) {
+	switch path {
+	case "apps/deployment.yaml":
+		return &artifact.Content{File: artifact.File{Path: path, Size: 2048}, Text: "kind: Deployment\n# <script>alert(1)</script>\n"}, nil
+	case "logo.png":
+		return &artifact.Content{File: artifact.File{Path: path, Size: 10}, Binary: true}, nil
+	default:
+		return nil, artifact.ErrNotFound
+	}
 }
 
 func (b testBackend) ControllerLogs(_ context.Context, k flux.Kind, namespace, name string) ([]store.LogLine, error) {
@@ -585,5 +612,78 @@ func TestKustomizationDiffDisabled(t *testing.T) {
 	assertNotContains(t, body, "Diff with source")
 	if res, _ := get(t, srv, "/objects/kustomizations/flux-system/apps/diff"); res.StatusCode != http.StatusNotFound {
 		t.Errorf("diff status = %d, want 404", res.StatusCode)
+	}
+}
+
+func TestArtifactBrowser(t *testing.T) {
+	srv, _, _ := newTestServerWith(t, false, Options{ArtifactBrowser: true})
+
+	_, body := get(t, srv, "/objects/gitrepositories/flux-system/flux-system")
+	assertContains(t, body, "Source artifact", `hx-get="/objects/gitrepositories/flux-system/flux-system/artifact"`)
+	_, body = get(t, srv, "/objects/helmreleases/apps/podinfo")
+	assertNotContains(t, body, "Source artifact") // not a source
+
+	res, body := get(t, srv, "/objects/gitrepositories/flux-system/flux-system/artifact")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", res.StatusCode)
+	}
+	assertContains(t, body, "3 files, 2.2 KiB", "main@cb89c25",
+		`hx-get="/objects/gitrepositories/flux-system/flux-system/artifact/file?path=apps%2Fdeployment.yaml"`,
+		`class="group/dir" open`) // small trees start expanded
+	// Directories first: apps/ (and its base/) before README.md.
+	if strings.Index(body, "apps/") > strings.Index(body, "README.md") || strings.Index(body, "base/") > strings.Index(body, "deployment.yaml") {
+		t.Error("directories are not listed before files")
+	}
+
+	res, body = get(t, srv, "/objects/gitrepositories/flux-system/flux-system/artifact/file?path=apps/deployment.yaml")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("file status = %d", res.StatusCode)
+	}
+	assertContains(t, body, "kind: Deployment", "&lt;script&gt;alert(1)&lt;/script&gt;")
+	assertNotContains(t, body, "<script>alert")
+
+	_, body = get(t, srv, "/objects/gitrepositories/flux-system/flux-system/artifact/file?path=logo.png")
+	assertContains(t, body, "Binary file, not shown.")
+	res, body = get(t, srv, "/objects/gitrepositories/flux-system/flux-system/artifact/file?path=../../etc/passwd")
+	if res.StatusCode != http.StatusNotFound {
+		t.Errorf("missing file status = %d", res.StatusCode)
+	}
+	assertContains(t, body, "no such file in the artifact")
+}
+
+func TestArtifactBrowserDisabled(t *testing.T) {
+	srv, _ := newTestServer(t, false)
+	_, body := get(t, srv, "/objects/gitrepositories/flux-system/flux-system")
+	assertNotContains(t, body, "Source artifact")
+	if res, _ := get(t, srv, "/objects/gitrepositories/flux-system/flux-system/artifact"); res.StatusCode != http.StatusNotFound {
+		t.Errorf("artifact status = %d, want 404", res.StatusCode)
+	}
+}
+
+func TestByteSize(t *testing.T) {
+	for n, want := range map[int64]string{0: "0 B", 1023: "1023 B", 1024: "1.0 KiB", 2252: "2.2 KiB", 5714780: "5.5 MiB", 3 << 30: "3.0 GiB"} {
+		if got := byteSize(n); got != want {
+			t.Errorf("byteSize(%d) = %q, want %q", n, got, want)
+		}
+	}
+}
+
+func TestBuildTreeCollapsesLargeArtifacts(t *testing.T) {
+	var files []artifact.File
+	for i := range expandAbove + 1 {
+		files = append(files, artifact.File{Path: fmt.Sprintf("apps/f%02d.yaml", i), Size: 1})
+	}
+	root, count, total := buildTree("/f", files)
+	if count != expandAbove+1 || total != int64(expandAbove+1) || len(root.Children) != 1 {
+		t.Fatalf("count = %d, total = %d, children = %d", count, total, len(root.Children))
+	}
+	// apps/ is the only top-level entry: it opens even in a large artifact.
+	if apps := root.Children[0]; !apps.Open || apps.Files != expandAbove+1 {
+		t.Errorf("apps/ = open %t, %d files", apps.Open, apps.Files)
+	}
+
+	files = append(files, artifact.File{Path: "README.md", Size: 1})
+	if root, _, _ := buildTree("/f", files); root.Children[0].Open {
+		t.Error("a directory with siblings in a large artifact starts expanded")
 	}
 }

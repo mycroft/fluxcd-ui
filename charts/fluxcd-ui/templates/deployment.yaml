@@ -40,6 +40,7 @@ spec:
             - {{ printf "--controller-logs=%t" .Values.logs.enabled | quote }}
             - {{ printf "--managed-objects-status=%t" .Values.managedObjects.status.enabled | quote }}
             - {{ printf "--diff=%t" .Values.diff.enabled | quote }}
+            - {{ printf "--artifact-browser=%t" .Values.artifactBrowser.enabled | quote }}
             {{- if .Values.actions.enabled }}
             - --enable-actions
             {{- end }}

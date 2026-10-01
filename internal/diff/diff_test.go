@@ -23,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/mycroft/fluxcd-ui/internal/artifact"
 	"github.com/mycroft/fluxcd-ui/internal/flux"
 )
 
@@ -86,11 +87,11 @@ func tarball(t *testing.T, files map[string]string) []byte {
 	return buf.Bytes()
 }
 
-func newDiffer(t *testing.T, artifact []byte, digestOverride string) *Differ {
+func newDiffer(t *testing.T, tarGz []byte, digestOverride string) *Differ {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(artifact) }))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(tarGz) }))
 	t.Cleanup(srv.Close)
-	sum := sha256.Sum256(artifact)
+	sum := sha256.Sum256(tarGz)
 	digest := cmpOr(digestOverride, "sha256:"+hex.EncodeToString(sum[:]))
 
 	scheme, err := flux.NewScheme()
@@ -104,7 +105,7 @@ func newDiffer(t *testing.T, artifact []byte, digestOverride string) *Differ {
 		&sourcev1.GitRepository{
 			ObjectMeta: metav1.ObjectMeta{Namespace: "flux-system", Name: "fleet"},
 			Status: sourcev1.GitRepositoryStatus{Artifact: &meta.Artifact{
-				URL: srv.URL + "/gitrepository/flux-system/fleet/abc.tar.gz", Digest: digest, Revision: "main@sha1:abc",
+				URL: srv.URL + "/gitrepository/flux-system/fleet/abc.tar.gz", Path: "gitrepository/flux-system/fleet/abc.tar.gz", Digest: digest, Revision: "main@sha1:abc",
 			}},
 		},
 		&kustomizev1.Kustomization{
@@ -142,7 +143,7 @@ func newDiffer(t *testing.T, artifact []byte, digestOverride string) *Differ {
 		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "old-config"}},
 	}
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
-	return New(c, c, srv.Client(), nil, t.TempDir())
+	return New(c, c, artifact.NewFetcher(srv.Client(), nil), t.TempDir())
 }
 
 func cmpOr(a, b string) string {
@@ -238,16 +239,5 @@ func TestKustomizationDiffMissingPath(t *testing.T) {
 	_, err := d.Kustomization(context.Background(), "flux-system", "apps")
 	if err == nil || !strings.Contains(err.Error(), `path "./apps" not found`) {
 		t.Fatalf("err = %v", err)
-	}
-}
-
-func TestProxyURL(t *testing.T) {
-	got, err := ProxyURL("https://10.0.0.1:6443/", "http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/fleet/abc.tar.gz")
-	want := "https://10.0.0.1:6443/api/v1/namespaces/flux-system/services/source-controller:80/proxy/gitrepository/flux-system/fleet/abc.tar.gz"
-	if err != nil || got != want {
-		t.Errorf("ProxyURL = %q, %v", got, err)
-	}
-	if _, err := ProxyURL("https://k8s", "https://example.com/a.tar.gz"); err == nil {
-		t.Error("accepted a non-service URL")
 	}
 }

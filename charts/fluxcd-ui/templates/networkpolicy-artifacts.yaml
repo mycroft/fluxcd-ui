@@ -1,4 +1,4 @@
-{{- if and .Values.diff.enabled .Values.diff.networkPolicy.create -}}
+{{- if and (or .Values.diff.enabled .Values.artifactBrowser.enabled) .Values.diff.networkPolicy.create -}}
 # Let fluxcd-ui fetch source artifacts from source-controller, which Flux's
 # default NetworkPolicies only open to pods of the Flux namespace.
 apiVersion: networking.k8s.io/v1

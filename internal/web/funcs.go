@@ -122,6 +122,7 @@ func templateFuncs() template.FuncMap {
 		},
 		"healthDot":   func(h store.Health) string { return healthDotClasses[h] },
 		"diffClass":   func(a diff.Action) string { return diffClasses[a] },
+		"byteSize":    byteSize,
 		"diffActions": func() []diff.Action { return diffActionOrder },
 		"healthClass": func(h store.Health) string { return healthClasses[h] },
 		"releaseStatusClass": func(status string) string {
@@ -179,6 +180,20 @@ func ago(t time.Time) string {
 	default:
 		return fmt.Sprintf("%dd", int(d.Hours()/24))
 	}
+}
+
+// byteSize formats a size in bytes for people: "512 B", "3.2 KiB", "1.5 MiB".
+func byteSize(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for m := n / unit; m >= unit; m /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
 // datetime formats t for <time datetime>, which app.js uses to keep

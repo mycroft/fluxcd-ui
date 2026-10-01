@@ -30,6 +30,12 @@ logs:
   # drawer. Grants reading pods and their logs in fluxNamespace only.
   enabled: true
 
+artifactBrowser:
+  # Offer to browse the files of a source's artifact (Git, OCI and Bucket
+  # sources, HelmCharts, HelmRepository indexes) in its detail drawer.
+  # Anyone who can reach the UI can then read the repositories' files.
+  enabled: true
+
 diff:
   # Offer to diff a Kustomization's source with the cluster, in its detail
   # drawer: fluxcd-ui downloads the source artifact from source-controller,
@@ -38,7 +44,8 @@ diff:
   enabled: true
   networkPolicy:
     # Flux's default NetworkPolicies only let pods of fluxNamespace reach
-    # source-controller: allow fluxcd-ui's pods to fetch artifacts too.
+    # source-controller: allow fluxcd-ui's pods to fetch artifacts too (for
+    # the diff and the artifact browser).
     create: true
 
 managedObjects:

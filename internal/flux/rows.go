@@ -23,6 +23,7 @@ func describeGitRepository(o *sourcev1.GitRepository) Detail {
 	ref := gitRef(o.Spec.Reference)
 	d.Cells = []Cell{{Text: o.Spec.URL}, {Text: ref}}
 	d.Revision = artifactRevision(o.Status.Artifact)
+	d.HasArtifact = o.Status.Artifact != nil
 
 	var f fields
 	f.add("URL", o.Spec.URL)
@@ -38,6 +39,7 @@ func describeOCIRepository(o *sourcev1.OCIRepository) Detail {
 	ref := ociRef(o.Spec.Reference)
 	d.Cells = []Cell{{Text: o.Spec.URL}, {Text: ref}}
 	d.Revision = artifactRevision(o.Status.Artifact)
+	d.HasArtifact = o.Status.Artifact != nil
 
 	var f fields
 	f.add("URL", o.Spec.URL)
@@ -58,6 +60,7 @@ func describeBucket(o *sourcev1.Bucket) Detail {
 	}
 	d.Cells = []Cell{{Text: o.Spec.Endpoint}, {Text: bucket}, {Text: provider}}
 	d.Revision = artifactRevision(o.Status.Artifact)
+	d.HasArtifact = o.Status.Artifact != nil
 
 	var f fields
 	f.add("Endpoint", o.Spec.Endpoint)
@@ -88,6 +91,7 @@ func describeHelmRepository(o *sourcev1.HelmRepository) Detail {
 	}
 	d.Cells = []Cell{{Text: o.Spec.URL}, {Text: typ}}
 	d.Revision = artifactRevision(o.Status.Artifact)
+	d.HasArtifact = o.Status.Artifact != nil
 
 	var f fields
 	f.add("URL", o.Spec.URL)
@@ -110,6 +114,7 @@ func describeHelmChart(o *sourcev1.HelmChart) Detail {
 	source := sourceRef(o.Spec.SourceRef.Kind, o.Spec.SourceRef.Name, "", o.Namespace)
 	d.Cells = []Cell{{Text: o.Spec.Chart}, {Text: version}, {Text: source}}
 	d.Revision = artifactRevision(o.Status.Artifact)
+	d.HasArtifact = o.Status.Artifact != nil
 	d.HasSource = true
 
 	var f fields
