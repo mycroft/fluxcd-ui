@@ -36,6 +36,8 @@ spec:
             - --addr=:8080
             - {{ printf "--log-level=%s" .Values.logLevel | quote }}
             - {{ printf "--log-format=%s" .Values.logFormat | quote }}
+            - {{ printf "--flux-namespace=%s" .Values.fluxNamespace | quote }}
+            - {{ printf "--controller-logs=%t" .Values.logs.enabled | quote }}
             {{- if .Values.actions.enabled }}
             - --enable-actions
             {{- end }}

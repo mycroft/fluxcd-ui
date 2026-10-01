@@ -22,6 +22,14 @@ rbac:
   # actions.enabled, it also grants patch on them.
   create: true
 
+# Namespace of the Flux controllers.
+fluxNamespace: flux-system
+
+logs:
+  # Offer the Flux controllers' recent logs about an object in its detail
+  # drawer. Grants reading pods and their logs in fluxNamespace only.
+  enabled: true
+
 actions:
   # Allow suspending, resuming and reconciling Flux objects from the UI.
   # Anyone who can reach the UI can then do so: only enable this behind an

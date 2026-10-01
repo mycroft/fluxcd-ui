@@ -42,6 +42,7 @@ type Backend interface {
 	RequestReconcile(ctx context.Context, refs []store.ObjectRef) error
 	Related(ctx context.Context, k flux.Kind, namespace, name string) []store.ObjectRef
 	Events(ctx context.Context, refs ...store.ObjectRef) []store.Event
+	ControllerLogs(ctx context.Context, k flux.Kind, namespace, name string) ([]store.LogLine, error)
 }
 
 // Options configures a Server.
@@ -58,6 +59,8 @@ type Options struct {
 	GroupsSeparator string
 	// Authorizer decides who may act. nil lets every user act.
 	Authorizer authz.Authorizer
+	// Logs offers the controller logs about an object in its drawer.
+	Logs bool
 }
 
 // Server is the HTTP handler of the UI.
@@ -103,6 +106,7 @@ func New(backend Backend, broker *store.Broker, opts Options, log *slog.Logger) 
 	s.mux.HandleFunc("GET /fragments/summary", s.handleSummary)
 	s.mux.HandleFunc("GET /fragments/rows/{kind}", s.handleRows)
 	s.mux.HandleFunc("GET /objects/{kind}/{namespace}/{name}", s.handleObject)
+	s.mux.HandleFunc("GET /objects/{kind}/{namespace}/{name}/logs", s.handleLogs)
 	s.mux.HandleFunc("POST /objects/{kind}/{namespace}/{name}/{action}", s.handleAction)
 	s.mux.HandleFunc("GET /events", s.handleEvents)
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
@@ -283,6 +287,7 @@ type drawer struct {
 	Events    []store.Event // about the object and its sources, newest first
 	Missing   bool
 	Actions   bool        // actions are enabled
+	Logs      bool        // controller logs are offered
 	Can       permissions // what the current user may do on this object
 	OOB       bool        // render the header as an out-of-band swap
 }
@@ -299,7 +304,7 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	d := drawer{Kind: k, Namespace: r.PathValue("namespace"), Name: r.PathValue("name"), Actions: s.opts.Actions}
+	d := drawer{Kind: k, Namespace: r.PathValue("namespace"), Name: r.PathValue("name"), Actions: s.opts.Actions, Logs: s.opts.Logs}
 	// ?part=body is the live refresh of an open drawer: its body, plus the
 	// header out of band.
 	tmpl := "drawer"
@@ -478,6 +483,29 @@ func (s *Server) user(r *http.Request) string {
 		return ""
 	}
 	return strings.TrimSpace(r.Header.Get(s.opts.UserHeader))
+}
+
+type logsView struct {
+	Kind  flux.Kind
+	Lines []store.LogLine
+	Err   error
+	Now   time.Time
+}
+
+// handleLogs serves the controller log lines about an object, on demand:
+// reading them means fetching the controller pods' recent logs.
+func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
+	k, ok := flux.KindByID(r.PathValue("kind"))
+	if !ok || !s.opts.Logs {
+		http.NotFound(w, r)
+		return
+	}
+	v := logsView{Kind: k, Now: time.Now()}
+	v.Lines, v.Err = s.backend.ControllerLogs(r.Context(), k, r.PathValue("namespace"), r.PathValue("name"))
+	if v.Err != nil {
+		s.log.Warn("reading controller logs", "kind", k.ID, "namespace", r.PathValue("namespace"), "name", r.PathValue("name"), "err", v.Err)
+	}
+	s.render(w, http.StatusOK, "logs", v)
 }
 
 func (s *Server) handleReadyz(w http.ResponseWriter, _ *http.Request) {

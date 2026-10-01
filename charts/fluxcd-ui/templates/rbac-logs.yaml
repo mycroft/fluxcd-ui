@@ -1,0 +1,33 @@
+{{- if and .Values.rbac.create .Values.logs.enabled -}}
+# Reading the Flux controllers' logs, for the detail drawer.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "fluxcd-ui.fullname" . }}-logs
+  namespace: {{ .Values.fluxNamespace }}
+  labels:
+    {{- include "fluxcd-ui.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["list"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "fluxcd-ui.fullname" . }}-logs
+  namespace: {{ .Values.fluxNamespace }}
+  labels:
+    {{- include "fluxcd-ui.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "fluxcd-ui.fullname" . }}-logs
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "fluxcd-ui.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

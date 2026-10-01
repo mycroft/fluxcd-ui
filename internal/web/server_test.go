@@ -3,6 +3,7 @@ package web
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -68,6 +69,19 @@ type testBackend struct {
 }
 
 func (b testBackend) Ready() bool { return !b.notReady && b.Store.Ready() }
+
+// testLogs is what testBackend serves as controller logs.
+var testLogs = []store.LogLine{
+	{Time: time.Date(2026, 10, 1, 20, 0, 2, 0, time.UTC), Level: "error", Message: "Reconciler error", Error: "install retries exhausted"},
+	{Time: time.Date(2026, 10, 1, 20, 0, 1, 0, time.UTC), Level: "info", Message: "running install action"},
+}
+
+func (b testBackend) ControllerLogs(_ context.Context, k flux.Kind, namespace, name string) ([]store.LogLine, error) {
+	if k.ID == "helmreleases" && namespace == "apps" && name == "podinfo" {
+		return testLogs, nil
+	}
+	return nil, errors.New(`pods is forbidden: cannot list resource "pods"`)
+}
 
 func newTestServer(t *testing.T, notReady bool) (*Server, *store.Broker) {
 	t.Helper()
@@ -384,4 +398,32 @@ func TestDrawerEvents(t *testing.T) {
 
 	_, body = get(t, srv, "/objects/gitrepositories/flux-system/flux-system")
 	assertContains(t, body, "No recent events.")
+}
+
+func TestControllerLogs(t *testing.T) {
+	srv, _, _ := newTestServerWith(t, false, Options{Logs: true})
+
+	_, body := get(t, srv, "/objects/helmreleases/apps/podinfo")
+	assertContains(t, body, "Controller logs", "helm-controller", `hx-get="/objects/helmreleases/apps/podinfo/logs"`)
+
+	res, body := get(t, srv, "/objects/helmreleases/apps/podinfo/logs")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", res.StatusCode)
+	}
+	assertContains(t, body, "10-01 20:00:02", "Reconciler error", "install retries exhausted", "font-semibold text-red-600", "2 lines, newest first")
+	if strings.Index(body, "Reconciler error") > strings.Index(body, "running install action") {
+		t.Error("lines are not newest first")
+	}
+
+	_, body = get(t, srv, "/objects/kustomizations/flux-system/apps/logs")
+	assertContains(t, body, "pods is forbidden")
+}
+
+func TestControllerLogsDisabled(t *testing.T) {
+	srv, _ := newTestServer(t, false)
+	_, body := get(t, srv, "/objects/helmreleases/apps/podinfo")
+	assertNotContains(t, body, "Controller logs")
+	if res, _ := get(t, srv, "/objects/helmreleases/apps/podinfo/logs"); res.StatusCode != http.StatusNotFound {
+		t.Errorf("logs status = %d, want 404", res.StatusCode)
+	}
 }

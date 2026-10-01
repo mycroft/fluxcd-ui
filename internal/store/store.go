@@ -41,8 +41,12 @@ type Store struct {
 	writer client.Client
 	cache  cache.Cache     // nil when built with New
 	events *eventInformers // nil when built with New
-	broker *Broker
-	log    *slog.Logger
+	// clientset reads controller pod logs in fluxNamespace; nil when built
+	// with New.
+	clientset     kubernetes.Interface
+	fluxNamespace string
+	broker        *Broker
+	log           *slog.Logger
 
 	mu     sync.RWMutex
 	states map[string]*KindState
@@ -62,8 +66,9 @@ func New(c client.Client, broker *Broker, installed ...string) *Store {
 }
 
 // NewForCluster discovers which Flux kinds the cluster serves and prepares an
-// informer cache for them. Call Start to run it.
-func NewForCluster(cfg *rest.Config, broker *Broker, log *slog.Logger) (*Store, error) {
+// informer cache for them. Call Start to run it. fluxNamespace is where the
+// Flux controllers run, for their logs.
+func NewForCluster(cfg *rest.Config, broker *Broker, fluxNamespace string, log *slog.Logger) (*Store, error) {
 	scheme, err := flux.NewScheme()
 	if err != nil {
 		return nil, err
@@ -73,7 +78,7 @@ func NewForCluster(cfg *rest.Config, broker *Broker, log *slog.Logger) (*Store, 
 		return nil, err
 	}
 
-	s := &Store{broker: broker, log: log, states: map[string]*KindState{}}
+	s := &Store{broker: broker, log: log, fluxNamespace: fluxNamespace, states: map[string]*KindState{}}
 	for _, k := range flux.Kinds {
 		s.states[k.ID] = &KindState{Installed: installed[k.ID]}
 		if !installed[k.ID] {
@@ -100,6 +105,7 @@ func NewForCluster(cfg *rest.Config, broker *Broker, log *slog.Logger) (*Store, 
 	if err != nil {
 		return nil, fmt.Errorf("creating clientset: %w", err)
 	}
+	s.clientset = cs
 	var groupVersions []string
 	for _, k := range flux.Kinds {
 		if gv := k.GVK.GroupVersion().String(); installed[k.ID] && !slices.Contains(groupVersions, gv) {

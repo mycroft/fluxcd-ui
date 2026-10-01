@@ -1,4 +1,7 @@
 # Every optional feature turned on, for CI (helm lint, kubeconform).
+fluxNamespace: flux
+logs:
+  enabled: true
 actions:
   enabled: true
 auth:

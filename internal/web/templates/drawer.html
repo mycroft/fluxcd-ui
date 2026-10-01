@@ -9,6 +9,22 @@
     <div id="drawer-body" hx-get="/objects/{{.Kind.ID}}/{{.Namespace}}/{{.Name}}?part=body" hx-trigger="sse:{{.Kind.ID}}, sse:events" hx-target="this" hx-swap="innerHTML">
       {{- template "drawer-body" .}}
     </div>
+    {{- if and .Logs (not .Missing)}}
+    <section class="px-6 pb-6">
+      <div class="mb-3 flex items-center gap-3">
+        <h3 class="text-xs font-semibold tracking-wide text-slate-500 uppercase">Controller logs</h3>
+        <span class="font-mono text-xs text-slate-400">{{.Kind.Controller}}</span>
+        <button type="button" hx-get="/objects/{{.Kind.ID}}/{{.Namespace}}/{{.Name}}/logs" hx-target="#drawer-logs" hx-swap="innerHTML" hx-disabled-elt="this"
+                class="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-xs hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
+          <svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 in-[.htmx-request]:animate-spin" aria-hidden="true"><path fill-rule="evenodd" d="M15.31 11.42a5.5 5.5 0 0 1-9.2 2.47l-.32-.32h2.43a.75.75 0 0 0 0-1.5H4.25a.75.75 0 0 0-.75.75v3.98a.75.75 0 0 0 1.5 0v-2.35l.31.31a7 7 0 0 0 11.71-3.14.75.75 0 1 0-1.45-.39Zm1.23-3.72a.75.75 0 0 0 .22-.53V3.2a.75.75 0 0 0-1.5 0v2.35l-.31-.31A7 7 0 0 0 3.24 8.38a.75.75 0 1 0 1.45.39 5.5 5.5 0 0 1 9.2-2.47l.31.31h-2.43a.75.75 0 0 0 0 1.5h3.98a.75.75 0 0 0 .53-.22Z" clip-rule="evenodd"/></svg>
+          Load latest
+        </button>
+      </div>
+      <div id="drawer-logs">
+        <p class="text-sm text-slate-500">Load the recent lines {{.Kind.Controller}} wrote about this object.</p>
+      </div>
+    </section>
+    {{- end}}
   </aside>
 </div>
 {{- end}}
@@ -170,4 +186,25 @@
     {{- .Message -}}
   </div>
 </div>
+{{- end}}
+
+{{define "logs" -}}
+{{- if .Err}}
+<p class="text-sm break-words text-red-600 dark:text-red-400">{{.Err}}</p>
+{{- else if not .Lines}}
+<p class="text-sm text-slate-500">{{.Kind.Controller}} has not logged anything about this object recently.</p>
+{{- else}}
+<ol class="max-h-96 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-3 font-mono text-xs leading-5 dark:border-slate-800 dark:bg-slate-950">
+  {{- range .Lines}}
+  <li class="break-words whitespace-pre-wrap">
+    {{- /* A span, not <time>: app.js rewrites <time> elements as relative times. */ -}}
+    <span class="text-slate-400" title="{{timestamp .Time}}">{{clock .Time}}</span>
+    <span class="{{logLevelClass .Level}}">{{.Level}}</span>
+    <span class="text-slate-700 dark:text-slate-300">{{.Message}}</span>
+    {{- with .Error}} <span class="text-red-600 dark:text-red-400">{{.}}</span>{{end}}
+  </li>
+  {{- end}}
+</ol>
+<p class="mt-2 text-xs text-slate-500">{{len .Lines}} lines, newest first, loaded at {{clock .Now}} UTC.</p>
+{{- end}}
 {{- end}}

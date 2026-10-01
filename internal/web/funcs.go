@@ -67,6 +67,19 @@ func templateFuncs() template.FuncMap {
 			return defaultCalloutClass
 		},
 		// showMessage reports whether a row should surface its status message.
+		"clock": func(t time.Time) string { return t.UTC().Format("01-02 15:04:05") },
+		"logLevelClass": func(level string) string {
+			switch level {
+			case "error", "dpanic", "panic", "fatal":
+				return "font-semibold text-red-600 dark:text-red-400"
+			case "warn":
+				return "text-amber-700 dark:text-amber-400"
+			case "debug":
+				return "text-slate-400"
+			default:
+				return "text-sky-700 dark:text-sky-400"
+			}
+		},
 		"eventClass": func(typ string) string {
 			if typ == corev1.EventTypeWarning {
 				return "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400"

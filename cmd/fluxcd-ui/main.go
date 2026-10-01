@@ -37,6 +37,8 @@ func main() {
 	groupsSeparator := flag.String("groups-separator", ",", `separator of the groups header ("|" for authentik)`)
 	authorization := flag.String("authorization", "none", `who may act: "none" (every user) or "rbac" (Kubernetes RBAC, via SubjectAccessReviews)`)
 	subjectPrefix := flag.String("subject-prefix", "fluxcd-ui:", "prefix added to user and group names before checking RBAC")
+	fluxNamespace := flag.String("flux-namespace", "flux-system", "namespace of the Flux controllers, whose logs the drawer shows")
+	controllerLogs := flag.Bool("controller-logs", true, "offer the Flux controllers' logs about an object in its drawer (requires reading pods and pods/log in --flux-namespace)")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse() // also parses --kubeconfig, registered by controller-runtime
 
@@ -56,12 +58,13 @@ func main() {
 		UserHeader:      *userHeader,
 		GroupsHeader:    *groupsHeader,
 		GroupsSeparator: *groupsSeparator,
+		Logs:            *controllerLogs,
 	}
 	if err := checkAuthorization(*authorization, *userHeader, *subjectPrefix); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
-	if err := run(*addr, opts, *authorization, *subjectPrefix, log); err != nil {
+	if err := run(*addr, opts, *authorization, *subjectPrefix, *fluxNamespace, log); err != nil {
 		log.Error("fatal", "err", err)
 		os.Exit(1)
 	}
@@ -84,7 +87,7 @@ func checkAuthorization(mode, userHeader, prefix string) error {
 	}
 }
 
-func run(addr string, opts web.Options, authorization, subjectPrefix string, log *slog.Logger) error {
+func run(addr string, opts web.Options, authorization, subjectPrefix, fluxNamespace string, log *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -95,7 +98,7 @@ func run(addr string, opts web.Options, authorization, subjectPrefix string, log
 	cfg.UserAgent = "fluxcd-ui/" + version
 
 	broker := store.NewBroker(300 * time.Millisecond)
-	st, err := store.NewForCluster(cfg, broker, log)
+	st, err := store.NewForCluster(cfg, broker, fluxNamespace, log)
 	if err != nil {
 		return err
 	}
