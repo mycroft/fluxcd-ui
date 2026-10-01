@@ -3,7 +3,7 @@
 A small, fast web UI for [Flux](https://fluxcd.io). It lists the Flux objects of a cluster on a single screen with their reconciliation state, and updates live as they change.
 
 Supported kinds:
-- GitRepositories, OCIRepositories, HelmRepositories, HelmCharts (`source.toolkit.fluxcd.io/v1`)
+- GitRepositories, OCIRepositories, Buckets, HelmRepositories, HelmCharts (`source.toolkit.fluxcd.io/v1`)
 - HelmReleases (`helm.toolkit.fluxcd.io/v2`)
 - Kustomizations (`kustomize.toolkit.fluxcd.io/v1`)
 

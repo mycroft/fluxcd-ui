@@ -193,7 +193,6 @@ var kindGVKs = func() map[string]schema.GroupVersionKind {
 	for _, k := range flux.Kinds {
 		m[k.GVK.Kind] = k.GVK
 	}
-	m[sourcev1.BucketKind] = sourcev1.GroupVersion.WithKind(sourcev1.BucketKind)
 	return m
 }()
 
@@ -202,6 +201,5 @@ var kindResources = func() map[string]schema.GroupResource {
 	for _, k := range flux.Kinds {
 		m[k.GVK.Kind] = schema.GroupResource{Group: k.GVK.Group, Resource: k.ID}
 	}
-	m[sourcev1.BucketKind] = schema.GroupResource{Group: sourcev1.GroupVersion.Group, Resource: "buckets"}
 	return m
 }()

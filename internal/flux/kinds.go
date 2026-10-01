@@ -98,6 +98,15 @@ var Kinds = []Kind{
 		describe:  describeAs(describeOCIRepository),
 	},
 	{
+		ID:        "buckets",
+		Title:     "Buckets",
+		GVK:       sourcev1.GroupVersion.WithKind(sourcev1.BucketKind),
+		Columns:   []string{"Endpoint", "Bucket", "Provider"},
+		newObject: func() client.Object { return &sourcev1.Bucket{} },
+		newList:   func() client.ObjectList { return &sourcev1.BucketList{} },
+		describe:  describeAs(describeBucket),
+	},
+	{
 		ID:        "helmrepositories",
 		Title:     "HelmRepositories",
 		GVK:       sourcev1.GroupVersion.WithKind(sourcev1.HelmRepositoryKind),

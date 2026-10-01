@@ -7,7 +7,7 @@ metadata:
     {{- include "fluxcd-ui.labels" . | nindent 4 }}
 rules:
   - apiGroups: ["source.toolkit.fluxcd.io"]
-    resources: ["gitrepositories", "ocirepositories", "helmrepositories", "helmcharts"]
+    resources: ["gitrepositories", "ocirepositories", "buckets", "helmrepositories", "helmcharts"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["helm.toolkit.fluxcd.io"]
     resources: ["helmreleases"]
@@ -16,10 +16,9 @@ rules:
     resources: ["kustomizations"]
     verbs: ["get", "list", "watch"]
   {{- if .Values.actions.enabled }}
-  # Suspend/resume (spec.suspend) and reconcile (annotations). Buckets can be
-  # the source of a Kustomization or a HelmChart.
+  # Suspend/resume (spec.suspend) and reconcile (annotations).
   - apiGroups: ["source.toolkit.fluxcd.io"]
-    resources: ["gitrepositories", "ocirepositories", "helmrepositories", "helmcharts", "buckets"]
+    resources: ["gitrepositories", "ocirepositories", "buckets", "helmrepositories", "helmcharts"]
     verbs: ["patch"]
   - apiGroups: ["helm.toolkit.fluxcd.io"]
     resources: ["helmreleases"]

@@ -237,3 +237,29 @@ func TestRowsFromList(t *testing.T) {
 		t.Errorf("rows = %+v", rows)
 	}
 }
+
+func TestBucketRow(t *testing.T) {
+	k := kind(t, "buckets")
+	o := &sourcev1.Bucket{
+		ObjectMeta: objectMeta("flux-system", "manifests"),
+		Spec: sourcev1.BucketSpec{
+			Endpoint:   "minio.example.com",
+			BucketName: "fleet",
+			Prefix:     "/clusters/home",
+			Interval:   metav1.Duration{Duration: 5 * time.Minute},
+		},
+		Status: sourcev1.BucketStatus{
+			ObservedGeneration: 1,
+			Conditions:         readyConditions(time.Now()),
+			Artifact:           &meta.Artifact{Revision: "sha256:7109707984ef623368e15635d2b88c38d74a9e977e48d70bafa2dd101b4a2e12"},
+		},
+	}
+	d := k.Describe(o)
+	assertCells(t, d.Row, "minio.example.com", "fleet/clusters/home", "generic")
+	if d.Status.State != StateReady || ShortRevision(d.Revision) != "sha256:7109707" {
+		t.Errorf("status = %s, revision = %q", d.Status.State, d.Revision)
+	}
+
+	o.Spec.Provider, o.Spec.Prefix = "aws", ""
+	assertCells(t, k.Describe(o).Row, "minio.example.com", "fleet", "aws")
+}

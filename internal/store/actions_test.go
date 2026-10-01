@@ -43,6 +43,11 @@ func newActionStore(t *testing.T) (*Store, client.Client) {
 			Spec:       kustomizev1.KustomizationSpec{SourceRef: kustomizev1.CrossNamespaceSourceReference{Kind: "GitRepository", Name: "fleet"}},
 		},
 		&kustomizev1.Kustomization{ObjectMeta: om("flux-system", "paused"), Spec: kustomizev1.KustomizationSpec{Suspend: true}},
+		&sourcev1.Bucket{ObjectMeta: om("flux-system", "manifests")},
+		&kustomizev1.Kustomization{
+			ObjectMeta: om("flux-system", "from-bucket"),
+			Spec:       kustomizev1.KustomizationSpec{SourceRef: kustomizev1.CrossNamespaceSourceReference{Kind: "Bucket", Name: "manifests"}},
+		},
 		&helmv2.HelmRelease{
 			ObjectMeta: om("apps", "podinfo"),
 			Spec: helmv2.HelmReleaseSpec{Chart: &helmv2.HelmChartTemplate{Spec: helmv2.HelmChartTemplateSpec{
@@ -130,6 +135,10 @@ func TestReconcilePlan(t *testing.T) {
 			want: []string{"HelmRepository flux-system/podinfo", "HelmChart flux-system/apps-podinfo"}},
 		{name: "source", kind: "gitrepositories", namespace: "flux-system", object: "fleet", withSource: true,
 			want: []string{"GitRepository flux-system/fleet"}},
+		{name: "kustomization from a bucket", kind: "kustomizations", namespace: "flux-system", object: "from-bucket", withSource: true,
+			want: []string{"Bucket flux-system/manifests", "Kustomization flux-system/from-bucket"}},
+		{name: "bucket", kind: "buckets", namespace: "flux-system", object: "manifests",
+			want: []string{"Bucket flux-system/manifests"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -1,6 +1,7 @@
 package flux
 
 import (
+	"cmp"
 	"strconv"
 	"strings"
 	"time"
@@ -41,6 +42,34 @@ func describeOCIRepository(o *sourcev1.OCIRepository) Detail {
 	f.add("URL", o.Spec.URL)
 	f.add("Ref", ref)
 	f.add("Provider", o.Spec.Provider)
+	f.addArtifact(o.Status.Artifact)
+	f.addSchedule(o.Spec.Interval, o.Spec.Timeout)
+	d.Fields = f
+	return d
+}
+
+func describeBucket(o *sourcev1.Bucket) Detail {
+	d := newDetail(o, o.Spec.Suspend, o.Status.ObservedGeneration, o.Status.Conditions, o.Status.LastHandledReconcileAt)
+	provider := cmp.Or(o.Spec.Provider, sourcev1.BucketProviderGeneric)
+	bucket := o.Spec.BucketName
+	if o.Spec.Prefix != "" {
+		bucket += "/" + strings.TrimPrefix(o.Spec.Prefix, "/")
+	}
+	d.Cells = []Cell{{Text: o.Spec.Endpoint}, {Text: bucket}, {Text: provider}}
+	d.Revision = artifactRevision(o.Status.Artifact)
+
+	var f fields
+	f.add("Endpoint", o.Spec.Endpoint)
+	f.add("Bucket", o.Spec.BucketName)
+	f.addMono("Prefix", o.Spec.Prefix)
+	f.add("Provider", provider)
+	f.add("Region", o.Spec.Region)
+	if o.Spec.Insecure {
+		f.add("Insecure", "true (plain HTTP)")
+	}
+	if sts := o.Spec.STS; sts != nil {
+		f.add("STS", sts.Provider+" "+sts.Endpoint)
+	}
 	f.addArtifact(o.Status.Artifact)
 	f.addSchedule(o.Spec.Interval, o.Spec.Timeout)
 	d.Fields = f
