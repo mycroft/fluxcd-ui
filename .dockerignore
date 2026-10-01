@@ -1,0 +1,6 @@
+.git
+bin/
+charts/
+internal/web/static/css/app.css
+Dockerfile
+README.md

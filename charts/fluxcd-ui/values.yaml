@@ -1,0 +1,108 @@
+image:
+  repository: registry.mkz.me/mycroft/fluxcd-ui
+  # Defaults to the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+replicaCount: 1
+
+serviceAccount:
+  create: true
+  # Defaults to the release's full name.
+  name: ""
+  annotations: {}
+
+rbac:
+  # Create a ClusterRole granting read-only access (get/list/watch) to the
+  # Flux objects shown in the UI, bound to the service account. With
+  # actions.enabled, it also grants patch on them.
+  create: true
+
+actions:
+  # Allow suspending, resuming and reconciling Flux objects from the UI.
+  # Anyone who can reach the UI can then do so: only enable this behind an
+  # authenticating proxy (see auth.userHeader).
+  enabled: false
+
+auth:
+  # Request header carrying the user name set by the authenticating proxy in
+  # front of the UI: X-authentik-username (authentik), X-Auth-Request-User or
+  # X-Forwarded-User (oauth2-proxy). When set, actions are refused without it
+  # and logged with the user name.
+  userHeader: ""
+  # Request header carrying the user's groups: X-authentik-groups (authentik,
+  # separator "|"), X-Forwarded-Groups or X-Auth-Request-Groups (oauth2-proxy,
+  # separator ",").
+  groupsHeader: ""
+  groupsSeparator: ","
+
+authorization:
+  # Who may act when actions are enabled:
+  #   none: every user who reaches the UI.
+  #   rbac: users granted the "reconcile" / "suspend" verbs by Kubernetes RBAC,
+  #         checked with SubjectAccessReviews. Requires auth.userHeader.
+  mode: none
+  # Prepended to user and group names before checking RBAC, so that a header
+  # can never name a built-in identity such as system:masters. Bind roles to
+  # e.g. "fluxcd-ui:team-a". Must not be empty or start with "system:".
+  subjectPrefix: "fluxcd-ui:"
+  # Create the <fullname>-operator (reconcile, suspend) and
+  # <fullname>-reconciler (reconcile) ClusterRoles, ready to bind to groups.
+  createRoles: true
+
+# debug, info, warn or error
+logLevel: info
+# text or json
+logFormat: json
+extraArgs: []
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  port: 80
+
+# The UI has no built-in authentication: when exposing it, put it behind an
+# authenticating proxy (e.g. oauth2-proxy or your ingress controller's auth).
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: flux.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: flux-example-com-tls
+  #    hosts:
+  #      - flux.example.com
+
+# Memory grows with the number and size of Flux objects held in the cache.
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    memory: 128Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

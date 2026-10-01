@@ -1,0 +1,27 @@
+{{- if and .Values.rbac.create .Values.authorization.createRoles -}}
+# Roles for authorization.mode=rbac. Their verbs mean nothing to the API
+# server: they only let fluxcd-ui act on the user's behalf. Bind them to
+# prefixed groups, e.g. a RoleBinding in namespace "apps" to group
+# "{{ .Values.authorization.subjectPrefix }}team-a".
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "fluxcd-ui.fullname" . }}-operator
+  labels:
+    {{- include "fluxcd-ui.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["source.toolkit.fluxcd.io", "helm.toolkit.fluxcd.io", "kustomize.toolkit.fluxcd.io"]
+    resources: ["*"]
+    verbs: ["reconcile", "suspend"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "fluxcd-ui.fullname" . }}-reconciler
+  labels:
+    {{- include "fluxcd-ui.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["source.toolkit.fluxcd.io", "helm.toolkit.fluxcd.io", "kustomize.toolkit.fluxcd.io"]
+    resources: ["*"]
+    verbs: ["reconcile"]
+{{- end }}

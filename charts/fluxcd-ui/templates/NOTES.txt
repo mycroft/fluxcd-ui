@@ -1,0 +1,29 @@
+fluxcd-ui is starting. It lists Flux objects across the cluster{{ if not .Values.actions.enabled }} (read-only){{ end }}.
+{{- if .Values.ingress.enabled }}
+
+Open:
+{{- range .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}
+{{- end }}
+{{- else }}
+
+Reach it with a port-forward:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "fluxcd-ui.fullname" . }} 8080:{{ .Values.service.port }}
+and open http://localhost:8080
+{{- end }}
+
+{{- if .Values.actions.enabled }}
+
+Actions (suspend, resume, reconcile) are ENABLED.
+{{- if eq .Values.authorization.mode "rbac" }}
+Only users granted the "reconcile"/"suspend" verbs by Kubernetes RBAC may act.
+Bind {{ include "fluxcd-ui.fullname" . }}-operator or -reconciler to groups prefixed with "{{ .Values.authorization.subjectPrefix }}".
+{{- end }}
+{{- if not .Values.auth.userHeader }}
+WARNING: auth.userHeader is not set, so anyone who can reach the UI can
+suspend, resume and reconcile Flux objects.
+{{- end }}
+{{- end }}
+
+Note: the UI has no built-in authentication. Expose it only behind an
+authenticating proxy (authentik outpost, oauth2-proxy, ...).

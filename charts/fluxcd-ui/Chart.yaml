@@ -1,0 +1,13 @@
+apiVersion: v2
+name: fluxcd-ui
+description: A web UI listing Flux objects and their reconciliation state.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://git.mkz.me/mycroft/fluxcd-ui
+sources:
+  - https://git.mkz.me/mycroft/fluxcd-ui
+keywords:
+  - flux
+  - fluxcd
+  - gitops

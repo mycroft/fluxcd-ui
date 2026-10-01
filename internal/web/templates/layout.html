@@ -1,0 +1,78 @@
+{{define "index" -}}
+<!doctype html>
+<html lang="en" class="h-full"{{with .Theme}} data-theme="{{.}}"{{end}}>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="htmx-config" content='{"historyCacheSize":0,"refreshOnHistoryMiss":true,"allowEval":false,"allowScriptTags":false,"includeIndicatorStyles":false}'>
+  <title>Flux</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v={{.Version}}">
+  <link rel="stylesheet" href="/static/css/app.css?v={{.Version}}">
+  <script defer src="/static/js/htmx.min.js?v={{.Version}}"></script>
+  <script defer src="/static/js/sse.js?v={{.Version}}"></script>
+  <script defer src="/static/js/app.js?v={{.Version}}"></script>
+</head>
+<body class="min-h-full bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100" hx-ext="sse" sse-connect="/events">
+  <header class="sticky top-0 z-20 border-b border-slate-200 bg-white/85 backdrop-blur dark:border-slate-800 dark:bg-slate-950/85">
+    <form id="filters" action="/" method="get" class="mx-auto flex max-w-screen-2xl flex-col gap-3 px-4 py-3 sm:px-6"
+          hx-get="/fragments/content" hx-target="#content" hx-swap="innerHTML" hx-sync="this:replace"
+          hx-trigger="input changed delay:250ms from:#q, change, submit" hx-disinherit="*">
+      <div class="flex flex-wrap items-center gap-3">
+        <a href="/" class="flex items-center gap-2 font-semibold tracking-tight">
+          <svg viewBox="0 0 24 24" class="size-6 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M20.5 12a8.5 8.5 0 0 1-14.6 5.9"/><path d="M3.5 12a8.5 8.5 0 0 1 14.6-5.9"/><path d="M18.5 2.5v3.8h-3.8"/><path d="M5.5 21.5v-3.8h3.8"/>
+          </svg>
+          <span>Flux</span>
+        </a>
+        <label class="relative min-w-48 flex-1 sm:max-w-md">
+          <span class="sr-only">Search</span>
+          <svg viewBox="0 0 20 20" fill="currentColor" class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" aria-hidden="true">
+            <path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.45 4.39l3.08 3.08a.75.75 0 1 1-1.06 1.06l-3.08-3.08A7 7 0 0 1 2 9Z" clip-rule="evenodd"/>
+          </svg>
+          <input id="q" name="q" type="search" value="{{.Filter.Query}}" placeholder="Search names, URLs, revisions…" autocomplete="off" spellcheck="false"
+                 class="peer w-full rounded-lg border border-slate-300 bg-white py-1.5 pl-9 pr-9 text-sm shadow-xs placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 dark:border-slate-700 dark:bg-slate-900">
+          <kbd class="pointer-events-none absolute peer-focus:hidden peer-[:not(:placeholder-shown)]:hidden right-2.5 top-1/2 -translate-y-1/2 rounded border border-slate-200 px-1.5 font-mono text-[10px] text-slate-400 dark:border-slate-700">/</kbd>
+        </label>
+        <label>
+          <span class="sr-only">Namespace</span>
+          <select name="ns" class="rounded-lg border border-slate-300 bg-white py-1.5 pl-3 pr-8 text-sm shadow-xs focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 dark:border-slate-700 dark:bg-slate-900">
+            <option value="">All namespaces</option>
+            {{- range .Namespaces}}
+            <option value="{{.}}"{{if eq . $.Filter.Namespace}} selected{{end}}>{{.}}</option>
+            {{- end}}
+          </select>
+        </label>
+        <span id="live" data-live="connecting" class="group ml-auto flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400" title="Live updates">
+          <span class="size-2 rounded-full bg-slate-400 group-data-[live=open]:bg-emerald-500 group-data-[live=closed]:bg-red-500"></span>
+          <span data-label>Connecting…</span>
+        </span>
+        <button type="button" data-theme-toggle class="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                title="Toggle light/dark theme" aria-label="Toggle light/dark theme">
+          <svg viewBox="0 0 20 20" fill="currentColor" class="size-4 dark:hidden" aria-hidden="true"><path fill-rule="evenodd" d="M7.46 1.9a.75.75 0 0 1 .17.82 6.5 6.5 0 0 0 8.65 8.65.75.75 0 0 1 .99.99A8 8 0 1 1 6.64 1.73a.75.75 0 0 1 .82.17Z" clip-rule="evenodd"/></svg>
+          <svg viewBox="0 0 20 20" fill="currentColor" class="hidden size-4 dark:block" aria-hidden="true"><path d="M10 2a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5A.75.75 0 0 1 10 2ZM10 15a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5A.75.75 0 0 1 10 15ZM10 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM15.66 5.4a.75.75 0 0 0-1.06-1.06l-1.06 1.06a.75.75 0 0 0 1.06 1.06l1.06-1.06ZM6.46 14.6a.75.75 0 1 0-1.06-1.06l-1.06 1.06a.75.75 0 0 0 1.06 1.06l1.06-1.06ZM18 10a.75.75 0 0 1-.75.75h-1.5a.75.75 0 0 1 0-1.5h1.5A.75.75 0 0 1 18 10ZM5 10a.75.75 0 0 1-.75.75h-1.5a.75.75 0 0 1 0-1.5h1.5A.75.75 0 0 1 5 10ZM14.6 15.66a.75.75 0 0 0 1.06-1.06l-1.06-1.06a.75.75 0 1 0-1.06 1.06l1.06 1.06ZM5.4 6.46a.75.75 0 0 0 1.06-1.06L5.4 4.34a.75.75 0 0 0-1.06 1.06L5.4 6.46Z"/></svg>
+        </button>
+        {{- with .User}}
+        <span class="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400" title="Signed in">
+          <svg viewBox="0 0 20 20" fill="currentColor" class="size-4" aria-hidden="true"><path d="M10 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM3.47 15.89a.75.75 0 0 1-.36-.92 7.5 7.5 0 0 1 13.78 0 .75.75 0 0 1-.36.92A13.94 13.94 0 0 1 10 17.5a13.94 13.94 0 0 1-6.53-1.61Z"/></svg>
+          {{.}}
+        </span>
+        {{- end}}
+      </div>
+      {{template "summary" .Summary}}
+      <noscript><button type="submit" class="self-start rounded-lg border border-slate-300 px-3 py-1 text-sm">Apply filters</button></noscript>
+    </form>
+  </header>
+
+  <main id="content" class="mx-auto max-w-screen-2xl space-y-4 px-4 py-6 sm:px-6">
+    {{- template "content" .}}
+  </main>
+
+  <div id="drawer"></div>
+  <div id="toasts" class="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex flex-col items-center gap-2 p-4 sm:items-end" aria-live="polite"></div>
+</body>
+</html>
+{{- end}}
+
+{{define "content"}}{{range .Sections}}{{template "section" .}}{{end}}{{end}}
+
+{{define "content-fragment"}}{{template "content" .}}{{template "summary" .Summary}}{{end}}

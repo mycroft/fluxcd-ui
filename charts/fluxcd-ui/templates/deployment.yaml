@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fluxcd-ui.fullname" . }}
+  labels:
+    {{- include "fluxcd-ui.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "fluxcd-ui.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "fluxcd-ui.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "fluxcd-ui.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: fluxcd-ui
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --addr=:8080
+            - {{ printf "--log-level=%s" .Values.logLevel | quote }}
+            - {{ printf "--log-format=%s" .Values.logFormat | quote }}
+            {{- if .Values.actions.enabled }}
+            - --enable-actions
+            {{- end }}
+            {{- with .Values.auth.userHeader }}
+            - {{ printf "--user-header=%s" . | quote }}
+            {{- end }}
+            {{- with .Values.auth.groupsHeader }}
+            - {{ printf "--groups-header=%s" . | quote }}
+            - {{ printf "--groups-separator=%s" $.Values.auth.groupsSeparator | quote }}
+            {{- end }}
+            {{- if eq .Values.authorization.mode "rbac" }}
+            {{- if not .Values.auth.userHeader }}
+            {{- fail "authorization.mode=rbac requires auth.userHeader" }}
+            {{- end }}
+            - --authorization=rbac
+            - {{ printf "--subject-prefix=%s" .Values.authorization.subjectPrefix | quote }}
+            {{- else if ne .Values.authorization.mode "none" }}
+            {{- fail "authorization.mode must be none or rbac" }}
+            {{- end }}
+            {{- with .Values.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,52 @@
+{{- if .Values.rbac.create -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "fluxcd-ui.fullname" . }}
+  labels:
+    {{- include "fluxcd-ui.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["source.toolkit.fluxcd.io"]
+    resources: ["gitrepositories", "ocirepositories", "helmrepositories", "helmcharts"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["helm.toolkit.fluxcd.io"]
+    resources: ["helmreleases"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["kustomize.toolkit.fluxcd.io"]
+    resources: ["kustomizations"]
+    verbs: ["get", "list", "watch"]
+  {{- if .Values.actions.enabled }}
+  # Suspend/resume (spec.suspend) and reconcile (annotations). Buckets can be
+  # the source of a Kustomization or a HelmChart.
+  - apiGroups: ["source.toolkit.fluxcd.io"]
+    resources: ["gitrepositories", "ocirepositories", "helmrepositories", "helmcharts", "buckets"]
+    verbs: ["patch"]
+  - apiGroups: ["helm.toolkit.fluxcd.io"]
+    resources: ["helmreleases"]
+    verbs: ["patch"]
+  - apiGroups: ["kustomize.toolkit.fluxcd.io"]
+    resources: ["kustomizations"]
+    verbs: ["patch"]
+  {{- end }}
+  {{- if eq .Values.authorization.mode "rbac" }}
+  # Asking the API server whether a user may act (authorization.mode=rbac).
+  - apiGroups: ["authorization.k8s.io"]
+    resources: ["subjectaccessreviews"]
+    verbs: ["create"]
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "fluxcd-ui.fullname" . }}
+  labels:
+    {{- include "fluxcd-ui.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "fluxcd-ui.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "fluxcd-ui.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

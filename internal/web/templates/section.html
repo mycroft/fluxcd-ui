@@ -1,0 +1,86 @@
+{{define "section" -}}
+<details id="section-{{.Kind.ID}}" class="group/section overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900"{{if .Open}} open{{end}}>
+  <summary class="flex cursor-pointer list-none items-center gap-3 px-4 py-3 select-none hover:bg-slate-50 dark:hover:bg-slate-800/40">
+    <svg viewBox="0 0 20 20" fill="currentColor" class="size-4 shrink-0 text-slate-400 transition-transform group-open/section:rotate-90" aria-hidden="true">
+      <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 0 1 .02-1.06L11.17 10 7.23 6.29a.75.75 0 1 1 1.04-1.08l4.5 4.25a.75.75 0 0 1 0 1.08l-4.5 4.25a.75.75 0 0 1-1.06-.02Z" clip-rule="evenodd"/>
+    </svg>
+    <h2 class="font-semibold">{{.Kind.Title}}</h2>
+    {{template "count" .}}
+    <span class="ml-auto hidden font-mono text-xs text-slate-400 sm:inline">{{.Kind.GVK.Group}}/{{.Kind.GVK.Version}}</span>
+  </summary>
+  {{- if not .State.Installed}}
+  <p class="border-t border-slate-200 px-4 py-3 text-sm text-slate-500 dark:border-slate-800">
+    Not installed: the cluster does not serve <code class="font-mono text-xs">{{.Kind.GVK.Kind}}</code> in <code class="font-mono text-xs">{{.Kind.GVK.Group}}/{{.Kind.GVK.Version}}</code>.
+  </p>
+  {{- else}}
+  <div class="overflow-x-auto border-t border-slate-200 dark:border-slate-800">
+    <table class="w-full text-left text-sm">
+      <thead class="bg-slate-50 text-xs font-medium tracking-wide text-slate-500 uppercase dark:bg-slate-900/60 dark:text-slate-400">
+        <tr>
+          <th scope="col" class="px-4 py-2 font-medium">Name</th>
+          {{- range .Kind.Columns}}
+          <th scope="col" class="px-4 py-2 font-medium">{{.}}</th>
+          {{- end}}
+          <th scope="col" class="px-4 py-2 font-medium">Revision</th>
+          <th scope="col" class="px-4 py-2 font-medium">Status</th>
+          <th scope="col" class="px-4 py-2 text-right font-medium">Updated</th>
+        </tr>
+      </thead>
+      {{template "rows" .}}
+    </table>
+  </div>
+  {{- end}}
+</details>
+{{- end}}
+
+{{define "count" -}}
+<span id="count-{{.Kind.ID}}" class="flex items-center gap-2"{{if .OOB}} hx-swap-oob="true"{{end}}>
+  {{- if .State.Installed}}
+  <span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium tabular-nums text-slate-600 dark:bg-slate-800 dark:text-slate-300">{{if .Filtered}}{{len .Rows}} / {{end}}{{.Total}}</span>
+  {{- end}}
+  {{- if .Failing}}
+  <span class="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 ring-1 ring-red-600/20 ring-inset dark:bg-red-500/10 dark:text-red-400 dark:ring-red-500/20">{{.Failing}} failing</span>
+  {{- end}}
+</span>
+{{- end}}
+
+{{define "rows" -}}
+<tbody id="rows-{{.Kind.ID}}" class="divide-y divide-slate-100 dark:divide-slate-800"
+       hx-get="/fragments/rows/{{.Kind.ID}}" hx-trigger="sse:{{.Kind.ID}}" hx-include="#filters" hx-swap="outerHTML" hx-disinherit="*">
+  {{- if .Err}}
+  <tr><td colspan="{{.Colspan}}" class="px-4 py-3 text-sm text-red-600 dark:text-red-400">Listing failed: {{.Err}}</td></tr>
+  {{- else if not .State.Synced}}
+  <tr><td colspan="{{.Colspan}}" class="px-4 py-3 text-sm {{if .State.Err}}text-red-600 dark:text-red-400{{else}}text-slate-500{{end}}">
+    {{- if .State.Err}}Watch failed: {{.State.Err}}{{else}}Syncing…{{end -}}
+  </td></tr>
+  {{- else}}
+  {{- range .Rows}}
+  <tr class="cursor-pointer align-top hover:bg-slate-50 focus:bg-indigo-50 focus:outline-none dark:hover:bg-slate-800/40 dark:focus:bg-indigo-500/10" tabindex="0"
+      hx-get="/objects/{{.Kind}}/{{.Namespace}}/{{.Name}}" hx-target="#drawer" hx-swap="innerHTML">
+    <td class="px-4 py-2 whitespace-nowrap"><span class="text-slate-400 dark:text-slate-500">{{.Namespace}}/</span><span class="font-medium">{{.Name}}</span></td>
+    {{- range .Cells}}
+    <td class="max-w-xs truncate px-4 py-2 text-slate-600 dark:text-slate-300{{if .Mono}} font-mono text-xs leading-5{{end}}" title="{{.Text}}">{{or .Text "—"}}</td>
+    {{- end}}
+    <td class="px-4 py-2 font-mono text-xs leading-5 whitespace-nowrap text-slate-600 dark:text-slate-300" title="{{.Revision}}">{{with .Revision}}{{shortRev .}}{{else}}—{{end}}</td>
+    <td class="max-w-md px-4 py-2">
+      {{- template "pill" .Status.State}}
+      {{- if .Pending}}
+      <div class="mt-1">{{template "pending" .}}</div>
+      {{- end}}
+      {{- if showMessage .Status}}
+      <p class="mt-1 truncate text-xs {{messageClass .Status.State}}" title="{{.Status.Message}}">{{.Status.Message}}</p>
+      {{- end}}
+    </td>
+    <td class="px-4 py-2 text-right whitespace-nowrap text-slate-500 tabular-nums"><time datetime="{{datetime .Updated}}" title="{{timestamp .Updated}}">{{ago .Updated}}</time></td>
+  </tr>
+  {{- else}}
+  <tr><td colspan="{{.Colspan}}" class="px-4 py-6 text-center text-sm text-slate-500">{{if .Filtered}}No matching objects.{{else}}No objects.{{end}}</td></tr>
+  {{- end}}
+  {{- end}}
+</tbody>
+{{- if .OOB}}{{template "count" .}}{{end}}
+{{- end}}
+
+{{define "pill" -}}
+<span class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ring-1 ring-inset {{pillClass .}}"><span class="size-1.5 rounded-full {{dotClass .}}"></span>{{.}}</span>
+{{- end}}

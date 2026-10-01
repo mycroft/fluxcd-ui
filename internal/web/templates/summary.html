@@ -1,0 +1,15 @@
+{{define "summary" -}}
+<div id="summary" class="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Status filter"
+     hx-get="/fragments/summary" hx-trigger="sse:changed" hx-include="#filters" hx-target="this" hx-swap="outerHTML"{{if .OOB}} hx-swap-oob="true"{{end}}>
+  {{- range .Chips}}
+  <label class="cursor-pointer">
+    <input type="radio" name="status" value="{{.Value}}" class="peer sr-only"{{if .Selected}} checked{{end}}>
+    <span class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-sm text-slate-700 transition-colors hover:border-slate-300 peer-checked:border-slate-900 peer-checked:bg-slate-900 peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-500/50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:peer-checked:border-slate-100 dark:peer-checked:bg-slate-100 dark:peer-checked:text-slate-900">
+      {{- with .Dot}}<span class="size-2 rounded-full {{dotClass .}}"></span>{{end}}
+      {{.Label}}
+      <span class="font-semibold tabular-nums">{{.Count}}</span>
+    </span>
+  </label>
+  {{- end}}
+</div>
+{{- end}}
