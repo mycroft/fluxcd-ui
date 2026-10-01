@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/mycroft/fluxcd-ui/internal/flux"
@@ -66,6 +67,12 @@ func templateFuncs() template.FuncMap {
 			return defaultCalloutClass
 		},
 		// showMessage reports whether a row should surface its status message.
+		"eventClass": func(typ string) string {
+			if typ == corev1.EventTypeWarning {
+				return "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400"
+			}
+			return "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+		},
 		"showMessage": func(s flux.Status) bool {
 			return s.Message != "" && (s.State == flux.StateFailed || s.State == flux.StateProgressing || s.State == flux.StateUnknown)
 		},

@@ -7,6 +7,8 @@ Supported kinds:
 - HelmReleases (`helm.toolkit.fluxcd.io/v2`)
 - Kustomizations (`kustomize.toolkit.fluxcd.io/v1`)
 
+Clicking an object opens a detail drawer: its key fields, conditions, and the recent Kubernetes Events of the object and of the sources it reconciles from.
+
 It requires **Flux 2.6+**, the first release where all of these are GA. If the cluster doesn't serve a kind, its section shows "not installed". Kinds are detected at startup, so restart the UI after installing new Flux CRDs.
 
 By default the UI is read-only. With `--enable-actions`, the detail drawer can also suspend, resume and reconcile objects (see [Actions and authentication](#actions-and-authentication)).
@@ -55,7 +57,7 @@ kubectl -n fluxcd-ui port-forward svc/fluxcd-ui 8080:80
 
 The chart creates:
 - a ServiceAccount,
-- a read-only ClusterRole and its binding (`rbac.create`); `actions.enabled` adds `patch`,
+- a read-only ClusterRole on Flux objects and events, and its binding (`rbac.create`); `actions.enabled` adds `patch`,
 - a Deployment that runs as non-root with a read-only root filesystem and all capabilities dropped,
 - a Service, and an optional Ingress.
 

@@ -14,6 +14,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	toolscache "k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -38,7 +39,8 @@ type KindState struct {
 type Store struct {
 	reader client.Reader
 	writer client.Client
-	cache  cache.Cache // nil when built with New
+	cache  cache.Cache     // nil when built with New
+	events *eventInformers // nil when built with New
 	broker *Broker
 	log    *slog.Logger
 
@@ -93,6 +95,20 @@ func NewForCluster(cfg *rest.Config, broker *Broker, log *slog.Logger) (*Store, 
 	if s.writer, err = client.New(cfg, client.Options{Scheme: scheme}); err != nil {
 		return nil, fmt.Errorf("creating client: %w", err)
 	}
+
+	cs, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("creating clientset: %w", err)
+	}
+	var groupVersions []string
+	for _, k := range flux.Kinds {
+		if gv := k.GVK.GroupVersion().String(); installed[k.ID] && !slices.Contains(groupVersions, gv) {
+			groupVersions = append(groupVersions, gv)
+		}
+	}
+	if s.events, err = newEventInformers(cs, groupVersions, func() { broker.Notify(TopicEvents) }); err != nil {
+		return nil, fmt.Errorf("creating event informers: %w", err)
+	}
 	return s, nil
 }
 
@@ -112,6 +128,7 @@ func (s *Store) Start(ctx context.Context) error {
 		}
 		go s.waitForSync(ctx, k.ID, inf)
 	}
+	s.events.start(ctx)
 	return s.cache.Start(ctx)
 }
 

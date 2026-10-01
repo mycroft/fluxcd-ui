@@ -6,7 +6,7 @@
   <div class="absolute inset-0 bg-slate-900/20 dark:bg-slate-950/60" data-close-drawer></div>
   <aside class="relative flex h-full w-full max-w-2xl flex-col overflow-y-auto border-l border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900">
     {{- template "drawer-header" .}}
-    <div id="drawer-body" hx-get="/objects/{{.Kind.ID}}/{{.Namespace}}/{{.Name}}?part=body" hx-trigger="sse:{{.Kind.ID}}" hx-target="this" hx-swap="innerHTML">
+    <div id="drawer-body" hx-get="/objects/{{.Kind.ID}}/{{.Namespace}}/{{.Name}}?part=body" hx-trigger="sse:{{.Kind.ID}}, sse:events" hx-target="this" hx-swap="innerHTML">
       {{- template "drawer-body" .}}
     </div>
   </aside>
@@ -83,9 +83,37 @@
     <p class="text-sm text-slate-500">No conditions reported.</p>
     {{- end}}
   </section>
+
+  {{- template "events" $}}
 </div>
 {{- end}}
 {{- end}}
+{{- end}}
+
+{{define "events" -}}
+<section>
+  <h3 class="mb-3 text-xs font-semibold tracking-wide text-slate-500 uppercase">Events</h3>
+  {{- if .Events}}
+  <ul class="divide-y divide-slate-100 dark:divide-slate-800">
+    {{- range .Events}}
+    <li class="py-2 first:pt-0">
+      <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
+        <span class="rounded px-1.5 py-0.5 text-xs font-medium {{eventClass .Type}}">{{.Type}}</span>
+        <span class="font-medium">{{.Reason}}</span>
+        {{- if or (ne .Object.Kind $.Kind.GVK.Kind) (ne .Object.Name $.Name) (ne .Object.Namespace $.Namespace)}}
+        <span class="text-xs text-slate-500">{{.Object.Kind}} {{.Object.Namespace}}/{{.Object.Name}}</span>
+        {{- end}}
+        {{- if gt .Count 1}}<span class="text-xs text-slate-400 tabular-nums" title="Occurrences">×{{.Count}}</span>{{end}}
+        <span class="ml-auto text-xs text-slate-400 tabular-nums"><time datetime="{{datetime .LastSeen}}" title="{{timestamp .LastSeen}}">{{ago .LastSeen}}</time> ago</span>
+      </div>
+      <p class="mt-1 text-sm break-words whitespace-pre-line text-slate-600 dark:text-slate-300">{{.Message}}</p>
+    </li>
+    {{- end}}
+  </ul>
+  {{- else}}
+  <p class="text-sm text-slate-500">No recent events. Kubernetes keeps events for about an hour.</p>
+  {{- end}}
+</section>
 {{- end}}
 
 {{define "actions" -}}

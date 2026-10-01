@@ -40,6 +40,8 @@ type Backend interface {
 	SetSuspended(ctx context.Context, k flux.Kind, namespace, name string, suspend bool) error
 	ReconcilePlan(ctx context.Context, k flux.Kind, namespace, name string, withSource bool) ([]store.ObjectRef, error)
 	RequestReconcile(ctx context.Context, refs []store.ObjectRef) error
+	Related(ctx context.Context, k flux.Kind, namespace, name string) []store.ObjectRef
+	Events(ctx context.Context, refs ...store.ObjectRef) []store.Event
 }
 
 // Options configures a Server.
@@ -278,6 +280,7 @@ type drawer struct {
 	Namespace string
 	Name      string
 	Detail    flux.Detail
+	Events    []store.Event // about the object and its sources, newest first
 	Missing   bool
 	Actions   bool        // actions are enabled
 	Can       permissions // what the current user may do on this object
@@ -320,6 +323,7 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to get object", http.StatusInternalServerError)
 	default:
 		d.Detail = detail
+		d.Events = s.backend.Events(r.Context(), s.backend.Related(r.Context(), k, d.Namespace, d.Name)...)
 		if d.Actions {
 			d.Can = s.permissions(r, store.ObjectRef{Kind: k.GVK.Kind, Namespace: d.Namespace, Name: d.Name})
 		}

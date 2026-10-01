@@ -15,6 +15,10 @@ rules:
   - apiGroups: ["kustomize.toolkit.fluxcd.io"]
     resources: ["kustomizations"]
     verbs: ["get", "list", "watch"]
+  # Events about Flux objects, shown in the detail drawer.
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
   {{- if .Values.actions.enabled }}
   # Suspend/resume (spec.suspend) and reconcile (annotations).
   - apiGroups: ["source.toolkit.fluxcd.io"]

@@ -15,6 +15,7 @@ import (
 	kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
 	"github.com/fluxcd/pkg/apis/meta"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -78,6 +79,9 @@ func newTestServerWith(t *testing.T, notReady bool, opts Options, extra ...clien
 	t.Helper()
 	scheme, err := flux.NewScheme()
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := corev1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(append(fixtures(), extra...)...).Build()
@@ -208,7 +212,7 @@ func TestObjectDrawer(t *testing.T) {
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d", res.StatusCode)
 	}
-	assertContains(t, body, "HelmRelease", "install retries exhausted", "OCIRepository/podinfo", `hx-trigger="sse:helmreleases"`)
+	assertContains(t, body, "HelmRelease", "install retries exhausted", "OCIRepository/podinfo", `hx-trigger="sse:helmreleases, sse:events"`)
 
 	res, body = get(t, srv, "/objects/helmreleases/apps/missing")
 	if res.StatusCode != http.StatusNotFound {
@@ -350,4 +354,34 @@ func TestDrawerRefreshKeepsFrame(t *testing.T) {
 		t.Fatalf("missing object: status = %d", res.StatusCode)
 	}
 	assertContains(t, body, "does not exist")
+}
+
+func TestDrawerEvents(t *testing.T) {
+	ev := func(name, kind, object, typ, reason, msg string, ago time.Duration) *corev1.Event {
+		return &corev1.Event{
+			ObjectMeta:     metav1.ObjectMeta{Namespace: "apps", Name: name},
+			InvolvedObject: corev1.ObjectReference{Kind: kind, Namespace: "apps", Name: object},
+			Type:           typ, Reason: reason, Message: msg,
+			LastTimestamp: metav1.NewTime(time.Now().Add(-ago)),
+		}
+	}
+	srv, _, _ := newTestServerWith(t, false, Options{},
+		ev("a", "HelmRelease", "podinfo", corev1.EventTypeWarning, "InstallFailed", "Helm install failed: timed out", time.Minute),
+		ev("b", "OCIRepository", "podinfo", corev1.EventTypeNormal, "NewArtifact", "stored artifact 6.5.0", 2*time.Minute),
+		ev("c", "HelmRelease", "other", corev1.EventTypeNormal, "Unrelated", "not about podinfo", time.Second),
+	)
+
+	_, body := get(t, srv, "/objects/helmreleases/apps/podinfo")
+	assertContains(t, body,
+		`hx-trigger="sse:helmreleases, sse:events"`,
+		"InstallFailed", "Helm install failed: timed out", "bg-red-50", // warnings stand out
+		"NewArtifact", "OCIRepository apps/podinfo", // the source's events, labeled
+	)
+	assertNotContains(t, body, "Unrelated")
+	if strings.Index(body, "InstallFailed") > strings.Index(body, "NewArtifact") {
+		t.Error("events are not sorted newest first")
+	}
+
+	_, body = get(t, srv, "/objects/gitrepositories/flux-system/flux-system")
+	assertContains(t, body, "No recent events.")
 }
