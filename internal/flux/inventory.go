@@ -64,6 +64,11 @@ func parseInventoryID(id string) (InventoryEntry, bool) {
 	return e, e.Name != "" && e.Kind != ""
 }
 
+// ParseInventoryID parses an inventory ID, as found in status.inventory.
+func ParseInventoryID(id string) (InventoryEntry, bool) {
+	return parseInventoryID(id)
+}
+
 // groupInventory parses inventory entries and groups them by kind, sorted by
 // kind, then namespace and name. Unparseable entries are skipped.
 func groupInventory(refs []inventoryRef) []InventoryGroup {

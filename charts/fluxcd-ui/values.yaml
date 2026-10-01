@@ -30,6 +30,17 @@ logs:
   # drawer. Grants reading pods and their logs in fluxNamespace only.
   enabled: true
 
+diff:
+  # Offer to diff a Kustomization's source with the cluster, in its detail
+  # drawer: fluxcd-ui downloads the source artifact from source-controller,
+  # builds it, and compares the result with the live objects (read-only,
+  # with the same access as managedObjects.status).
+  enabled: true
+  networkPolicy:
+    # Flux's default NetworkPolicies only let pods of fluxNamespace reach
+    # source-controller: allow fluxcd-ui's pods to fetch artifacts too.
+    create: true
+
 managedObjects:
   status:
     # Show the health of the objects a Kustomization or HelmRelease manages,

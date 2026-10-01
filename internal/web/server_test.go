@@ -21,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/mycroft/fluxcd-ui/internal/diff"
 	"github.com/mycroft/fluxcd-ui/internal/flux"
 	"github.com/mycroft/fluxcd-ui/internal/store"
 )
@@ -74,6 +75,26 @@ func (b testBackend) Ready() bool { return !b.notReady && b.Store.Ready() }
 var testLogs = []store.LogLine{
 	{Time: time.Date(2026, 10, 1, 20, 0, 2, 0, time.UTC), Level: "error", Message: "Reconciler error", Error: "install retries exhausted"},
 	{Time: time.Date(2026, 10, 1, 20, 0, 1, 0, time.UTC), Level: "info", Message: "running install action"},
+}
+
+// testDiff is what testBackend serves as the diff of flux-system/apps.
+var testDiff = &diff.Result{
+	Revision:        "main@sha1:abcdef1234567890abcdef1234567890abcdef12",
+	AppliedRevision: "main@sha1:0000000111111122222223333333444444455555",
+	Counts:          map[diff.Action]int{diff.ActionChanged: 1, diff.ActionCreated: 1, diff.ActionUnchanged: 3},
+	Objects: []diff.Object{
+		{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "apps", Name: "podinfo", Action: diff.ActionChanged,
+			Changes: []diff.Change{{Path: "spec.replicas", Live: "3", Desired: "2"}}},
+		{APIVersion: "v1", Kind: "Service", Namespace: "apps", Name: "podinfo", Action: diff.ActionCreated},
+		{APIVersion: "v1", Kind: "ConfigMap", Namespace: "apps", Name: "untouched", Action: diff.ActionUnchanged},
+	},
+}
+
+func (b testBackend) DiffKustomization(_ context.Context, namespace, name string) (*diff.Result, error) {
+	if namespace == "flux-system" && name == "apps" {
+		return testDiff, nil
+	}
+	return nil, errors.New("downloading the source artifact: connection refused")
 }
 
 func (b testBackend) ControllerLogs(_ context.Context, k flux.Kind, namespace, name string) ([]store.LogLine, error) {
@@ -528,5 +549,41 @@ func TestDrawerInventoryHealthDisabled(t *testing.T) {
 	assertNotContains(t, body, `/inventory"`, "checking status…")
 	if res, _ := get(t, srv, "/objects/kustomizations/flux-system/infra/inventory"); res.StatusCode != http.StatusNotFound {
 		t.Errorf("inventory status = %d, want 404", res.StatusCode)
+	}
+}
+
+func TestKustomizationDiff(t *testing.T) {
+	srv, _, _ := newTestServerWith(t, false, Options{Diff: true})
+
+	_, body := get(t, srv, "/objects/kustomizations/flux-system/apps")
+	assertContains(t, body, "Diff with source", `hx-get="/objects/kustomizations/flux-system/apps/diff"`)
+	_, body = get(t, srv, "/objects/gitrepositories/flux-system/flux-system")
+	assertNotContains(t, body, "Diff with source") // Kustomizations only
+
+	res, body := get(t, srv, "/objects/kustomizations/flux-system/apps/diff")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", res.StatusCode)
+	}
+	assertContains(t, body,
+		"main@abcdef1", "newer than the last applied", // the source is ahead of the cluster
+		"1 Changed", "1 Created", "3 Unchanged",
+		"spec.replicas", ">3</td>", ">2</td>",
+		"Service",
+	)
+	assertNotContains(t, body, "untouched", "The cluster matches the source.") // unchanged objects are only counted
+	if strings.Index(body, "1 Changed") > strings.Index(body, "3 Unchanged") {
+		t.Error("summary is not in action order")
+	}
+
+	_, body = get(t, srv, "/objects/kustomizations/flux-system/other/diff")
+	assertContains(t, body, "connection refused")
+}
+
+func TestKustomizationDiffDisabled(t *testing.T) {
+	srv, _ := newTestServer(t, false)
+	_, body := get(t, srv, "/objects/kustomizations/flux-system/apps")
+	assertNotContains(t, body, "Diff with source")
+	if res, _ := get(t, srv, "/objects/kustomizations/flux-system/apps/diff"); res.StatusCode != http.StatusNotFound {
+		t.Errorf("diff status = %d, want 404", res.StatusCode)
 	}
 }

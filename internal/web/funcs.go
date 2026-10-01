@@ -9,6 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/mycroft/fluxcd-ui/internal/diff"
 	"github.com/mycroft/fluxcd-ui/internal/flux"
 	"github.com/mycroft/fluxcd-ui/internal/store"
 )
@@ -45,6 +46,20 @@ var calloutClasses = map[flux.State]string{
 }
 
 const defaultCalloutClass = "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-300"
+
+var diffClasses = map[diff.Action]string{
+	diff.ActionChanged:   "bg-amber-50 text-amber-700 ring-amber-600/20 dark:bg-amber-500/10 dark:text-amber-400 dark:ring-amber-500/20",
+	diff.ActionCreated:   "bg-sky-50 text-sky-700 ring-sky-600/20 dark:bg-sky-500/10 dark:text-sky-400 dark:ring-sky-500/20",
+	diff.ActionPruned:    "bg-red-50 text-red-700 ring-red-600/20 dark:bg-red-500/10 dark:text-red-400 dark:ring-red-500/20",
+	diff.ActionOrphaned:  "bg-slate-100 text-slate-600 ring-slate-500/20 dark:bg-slate-500/10 dark:text-slate-300 dark:ring-slate-400/20",
+	diff.ActionSkipped:   "bg-zinc-50 text-zinc-600 ring-zinc-500/20 dark:bg-zinc-500/10 dark:text-zinc-400 dark:ring-zinc-400/20",
+	diff.ActionUnchanged: "bg-emerald-50 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-400 dark:ring-emerald-500/20",
+}
+
+// diffActionOrder is the order of the diff summary.
+var diffActionOrder = []diff.Action{
+	diff.ActionChanged, diff.ActionCreated, diff.ActionPruned, diff.ActionOrphaned, diff.ActionSkipped, diff.ActionUnchanged,
+}
 
 var healthDotClasses = map[store.Health]string{
 	store.HealthReady:       "bg-emerald-500",
@@ -106,6 +121,8 @@ func templateFuncs() template.FuncMap {
 			}
 		},
 		"healthDot":   func(h store.Health) string { return healthDotClasses[h] },
+		"diffClass":   func(a diff.Action) string { return diffClasses[a] },
+		"diffActions": func() []diff.Action { return diffActionOrder },
 		"healthClass": func(h store.Health) string { return healthClasses[h] },
 		"releaseStatusClass": func(status string) string {
 			switch status {

@@ -39,6 +39,7 @@ spec:
             - {{ printf "--flux-namespace=%s" .Values.fluxNamespace | quote }}
             - {{ printf "--controller-logs=%t" .Values.logs.enabled | quote }}
             - {{ printf "--managed-objects-status=%t" .Values.managedObjects.status.enabled | quote }}
+            - {{ printf "--diff=%t" .Values.diff.enabled | quote }}
             {{- if .Values.actions.enabled }}
             - --enable-actions
             {{- end }}
@@ -77,6 +78,14 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            # Source builds for diffs; the root filesystem is read-only.
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 512Mi
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

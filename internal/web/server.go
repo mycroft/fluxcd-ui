@@ -21,6 +21,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/mycroft/fluxcd-ui/internal/authz"
+	"github.com/mycroft/fluxcd-ui/internal/diff"
 	"github.com/mycroft/fluxcd-ui/internal/flux"
 	"github.com/mycroft/fluxcd-ui/internal/store"
 )
@@ -44,6 +45,7 @@ type Backend interface {
 	Events(ctx context.Context, refs ...store.ObjectRef) []store.Event
 	ControllerLogs(ctx context.Context, k flux.Kind, namespace, name string) ([]store.LogLine, error)
 	ManagedHealth(ctx context.Context, entries []flux.InventoryEntry) map[string]store.ObjectHealth
+	DiffKustomization(ctx context.Context, namespace, name string) (*diff.Result, error)
 }
 
 // Options configures a Server.
@@ -65,6 +67,8 @@ type Options struct {
 	// ManagedStatus checks the health of the objects a Kustomization or
 	// HelmRelease manages when its drawer opens.
 	ManagedStatus bool
+	// Diff offers to compare a Kustomization's source with the cluster.
+	Diff bool
 }
 
 // Server is the HTTP handler of the UI.
@@ -112,6 +116,7 @@ func New(backend Backend, broker *store.Broker, opts Options, log *slog.Logger) 
 	s.mux.HandleFunc("GET /objects/{kind}/{namespace}/{name}", s.handleObject)
 	s.mux.HandleFunc("GET /objects/{kind}/{namespace}/{name}/logs", s.handleLogs)
 	s.mux.HandleFunc("GET /objects/{kind}/{namespace}/{name}/inventory", s.handleInventory)
+	s.mux.HandleFunc("GET /objects/kustomizations/{namespace}/{name}/diff", s.handleDiff)
 	s.mux.HandleFunc("POST /objects/{kind}/{namespace}/{name}/{action}", s.handleAction)
 	s.mux.HandleFunc("GET /events", s.handleEvents)
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
@@ -294,6 +299,7 @@ type drawer struct {
 	Missing   bool
 	Actions   bool        // actions are enabled
 	Logs      bool        // controller logs are offered
+	Diff      bool        // a source diff is offered
 	Can       permissions // what the current user may do on this object
 	OOB       bool        // render the header as an out-of-band swap
 }
@@ -310,7 +316,8 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	d := drawer{Kind: k, Namespace: r.PathValue("namespace"), Name: r.PathValue("name"), Actions: s.opts.Actions, Logs: s.opts.Logs}
+	d := drawer{Kind: k, Namespace: r.PathValue("namespace"), Name: r.PathValue("name"), Actions: s.opts.Actions, Logs: s.opts.Logs,
+		Diff: s.opts.Diff && k.ID == "kustomizations"}
 	// ?part=body is the live refresh of an open drawer: its body, plus the
 	// header out of band.
 	tmpl := "drawer"
@@ -542,6 +549,26 @@ func (s *Server) handleInventory(w http.ResponseWriter, r *http.Request) {
 	}
 	health := s.backend.ManagedHealth(r.Context(), entries)
 	s.render(w, http.StatusOK, "inventory", newInventoryView(objectPath(k, namespace, name), detail, true, health))
+}
+
+type diffView struct {
+	Result *diff.Result
+	Err    error
+}
+
+// handleDiff serves the diff of a Kustomization's source with the cluster,
+// on demand: it downloads and builds the source.
+func (s *Server) handleDiff(w http.ResponseWriter, r *http.Request) {
+	if !s.opts.Diff {
+		http.NotFound(w, r)
+		return
+	}
+	var v diffView
+	v.Result, v.Err = s.backend.DiffKustomization(r.Context(), r.PathValue("namespace"), r.PathValue("name"))
+	if v.Err != nil {
+		s.log.Warn("diffing kustomization", "namespace", r.PathValue("namespace"), "name", r.PathValue("name"), "err", v.Err)
+	}
+	s.render(w, http.StatusOK, "diff", v)
 }
 
 func objectPath(k flux.Kind, namespace, name string) string {

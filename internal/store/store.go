@@ -7,9 +7,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"os"
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -20,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/mycroft/fluxcd-ui/internal/diff"
 	"github.com/mycroft/fluxcd-ui/internal/flux"
 )
 
@@ -46,6 +50,7 @@ type Store struct {
 	clientset     kubernetes.Interface
 	fluxNamespace string
 	health        healthCache // computed health of managed objects
+	differ        *diff.Differ
 	broker        *Broker
 	log           *slog.Logger
 
@@ -57,6 +62,7 @@ type Store struct {
 // installed and already synced. It is meant for tests.
 func New(c client.Client, broker *Broker, installed ...string) *Store {
 	s := &Store{reader: c, writer: c, broker: broker, log: slog.Default(), states: map[string]*KindState{}}
+	s.differ = diff.New(c, c, http.DefaultClient, nil, "")
 	for _, k := range flux.Kinds {
 		s.states[k.ID] = &KindState{}
 	}
@@ -107,6 +113,17 @@ func NewForCluster(cfg *rest.Config, broker *Broker, fluxNamespace string, log *
 		return nil, fmt.Errorf("creating clientset: %w", err)
 	}
 	s.clientset = cs
+
+	// In the cluster, artifacts are fetched from source-controller like
+	// kustomize-controller does; outside of it, through the API server.
+	hc, rewrite := &http.Client{Timeout: time.Minute}, (func(string) (string, error))(nil)
+	if os.Getenv("KUBERNETES_SERVICE_HOST") == "" {
+		if hc, err = rest.HTTPClientFor(cfg); err != nil {
+			return nil, fmt.Errorf("creating HTTP client: %w", err)
+		}
+		rewrite = func(u string) (string, error) { return diff.ProxyURL(cfg.Host, u) }
+	}
+	s.differ = diff.New(s.reader, s.writer, hc, rewrite, "")
 	var groupVersions []string
 	for _, k := range flux.Kinds {
 		if gv := k.GVK.GroupVersion().String(); installed[k.ID] && !slices.Contains(groupVersions, gv) {
@@ -275,4 +292,10 @@ func discoverInstalled(cfg *rest.Config) (map[string]bool, error) {
 		installed[k.ID] = kinds[k.GVK.Kind]
 	}
 	return installed, nil
+}
+
+// DiffKustomization compares what a Kustomization's source would apply with
+// the cluster.
+func (s *Store) DiffKustomization(ctx context.Context, namespace, name string) (*diff.Result, error) {
+	return s.differ.Kustomization(ctx, namespace, name)
 }

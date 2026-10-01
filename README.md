@@ -7,7 +7,7 @@ Supported kinds:
 - HelmReleases (`helm.toolkit.fluxcd.io/v2`)
 - Kustomizations (`kustomize.toolkit.fluxcd.io/v1`)
 
-Clicking an object opens a detail drawer: its key fields, conditions, the recent Kubernetes Events of the object and of the sources it reconciles from, the objects a Kustomization or HelmRelease manages and their health (from its inventory, with links to the Flux objects among them), a HelmRelease's release history, and, on demand, what its Flux controller recently logged about it.
+Clicking an object opens a detail drawer: its key fields, conditions, the recent Kubernetes Events of the object and of the sources it reconciles from, the objects a Kustomization or HelmRelease manages and their health (from its inventory, with links to the Flux objects among them), a Kustomization's diff between its source and the cluster, a HelmRelease's release history, and, on demand, what its Flux controller recently logged about it.
 
 It requires **Flux 2.6+**, the first release where all of these are GA. If the cluster doesn't serve a kind, its section shows "not installed". Kinds are detected at startup, so restart the UI after installing new Flux CRDs.
 
@@ -45,6 +45,7 @@ Flags:
 | `--authorization` | `none` | Who may act: `none` (every user) or `rbac` (Kubernetes RBAC, see below) |
 | `--subject-prefix` | `fluxcd-ui:` | Prefix added to user and group names before checking RBAC |
 | `--flux-namespace` | `flux-system` | Namespace of the Flux controllers |
+| `--diff` | `true` | Offer to diff a Kustomization's source with the cluster. Requires reaching source-controller's artifacts (in the cluster) or the API server's service proxy (outside it), and read access to the managed objects |
 | `--managed-objects-status` | `true` | Show the health of the objects a Kustomization or HelmRelease manages. Requires read access to them |
 | `--controller-logs` | `true` | Offer the controllers' logs about an object in its drawer. Requires `list pods` and `get pods/log` in `--flux-namespace` |
 | `--version` | | Print the version and exit |
@@ -62,7 +63,8 @@ The chart creates:
 - a ServiceAccount,
 - a read-only ClusterRole on Flux objects and events, and its binding (`rbac.create`); `actions.enabled` adds `patch`,
 - a Role reading the controllers' pods and logs in `fluxNamespace` (`logs.enabled`),
-- a binding to the built-in `view` ClusterRole, to check the health of managed objects (`managedObjects.status.enabled`). `view` reads most resources but never Secrets; kinds it does not cover show as "no access" unless you grant them with `managedObjects.status.extraRules`,
+- a NetworkPolicy in `fluxNamespace` letting fluxcd-ui fetch artifacts from source-controller, which Flux's default NetworkPolicies only open to the Flux namespace (`diff.networkPolicy.create`),
+- a binding to the built-in `view` ClusterRole, to check the health of managed objects and diff them (`managedObjects.status.enabled`, `diff.enabled`). `view` reads most resources but never Secrets; kinds it does not cover show as "no access" unless you grant them with `managedObjects.status.extraRules`,
 - a Deployment that runs as non-root with a read-only root filesystem and all capabilities dropped,
 - a Service, and an optional Ingress.
 
@@ -71,6 +73,24 @@ See [`values.yaml`](charts/fluxcd-ui/values.yaml) for all options.
 > **Security:** there is no built-in authentication. Even read-only, the UI shows URLs, revisions and error messages from across the cluster. Expose it only behind an authenticating proxy, such as an authentik outpost or oauth2-proxy.
 
 Behind ingress-nginx, live updates work out of the box: the SSE response sets `X-Accel-Buffering: no` and sends a heartbeat every 20s.
+
+## Diffing a Kustomization
+
+"Compute diff" in a Kustomization's drawer shows what applying its source would change, without changing anything:
+
+1. fluxcd-ui downloads the artifact source-controller stored for the Kustomization's source, and verifies its digest.
+2. It builds it as kustomize-controller does, with Flux's own `kustomize` package: the generated `kustomization.yaml` (`images`, `patches`, `targetNamespace`, `namePrefix`, `components`...), then `postBuild` substitutions. Remote bases are not fetched.
+3. It compares each object with the live one, field by field, for the fields the source sets: defaults and fields other controllers manage are ignored, lists of named items (containers, env vars, ports) are matched by name, and quantities by value (`500m` equals `0.5`).
+
+The result lists objects that would be **changed** (with each field's cluster and source values), **created**, or **pruned**. When the source has a newer revision than the one last applied, the diff includes the changes not applied yet; otherwise, differences are drift.
+
+It is read-only, so it is an approximation of what a server-side apply would do. It does not see values an admission webhook would rewrite, and it skips what it cannot compare:
+
+- Secrets, and anything encrypted with SOPS,
+- objects whose kind `view` does not cover, unless granted with `managedObjects.status.extraRules`,
+- objects kustomize-controller would not apply (`kustomize.toolkit.fluxcd.io/reconcile: disabled`, `kustomize.toolkit.fluxcd.io/ssa: Ignore`).
+
+A `postBuild.substituteFrom` referencing a Secret makes the diff fail, as fluxcd-ui cannot read Secrets.
 
 ## Actions and authentication
 
