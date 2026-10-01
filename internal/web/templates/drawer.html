@@ -1,78 +1,91 @@
 {{define "drawer" -}}
-<div id="drawer-panel" class="fixed inset-0 z-30 flex justify-end" role="dialog" aria-modal="true" aria-labelledby="drawer-title"
-     hx-get="/objects/{{.Kind.ID}}/{{.Namespace}}/{{.Name}}" hx-trigger="sse:{{.Kind.ID}}" hx-target="this" hx-swap="outerHTML">
+{{- /* The frame stays put: live updates only re-fetch #drawer-body (plus the
+       header, out of band), so the scroll position and anything loaded below
+       the body survive them. */ -}}
+<div id="drawer-panel" class="fixed inset-0 z-30 flex justify-end" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
   <div class="absolute inset-0 bg-slate-900/20 dark:bg-slate-950/60" data-close-drawer></div>
   <aside class="relative flex h-full w-full max-w-2xl flex-col overflow-y-auto border-l border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900">
-    <header class="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-200 bg-white/95 px-6 py-4 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
-      <div class="min-w-0">
-        <p class="text-xs font-medium tracking-wide text-slate-500 uppercase">{{.Kind.GVK.Kind}}</p>
-        <h2 id="drawer-title" class="mt-1 truncate text-lg font-semibold"><span class="text-slate-400 dark:text-slate-500">{{.Namespace}}/</span>{{.Name}}</h2>
-        {{- if not .Missing}}
-        <div class="mt-2 flex flex-wrap items-center gap-3">
-          {{- template "pill" .Detail.Status.State}}
-          {{- if .Detail.Pending}}{{template "pending" .Detail.Row}}{{end}}
-        </div>
-        {{- if .Actions}}{{template "actions" .}}{{end}}
-        {{- end}}
-      </div>
-      <button type="button" class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200" data-close-drawer aria-label="Close">
-        <svg viewBox="0 0 20 20" fill="currentColor" class="size-5" aria-hidden="true"><path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"/></svg>
-      </button>
-    </header>
-
-    {{- if .Missing}}
-    <p class="px-6 py-5 text-sm text-slate-500">This object does not exist (anymore).</p>
-    {{- else}}
-    {{- with .Detail}}
-    <div class="space-y-6 px-6 py-5">
-      {{- with .Status.Message}}
-      <div class="rounded-lg border p-3 text-sm break-words {{calloutClass $.Detail.Status.State}}">
-        {{- with $.Detail.Status.Reason}}<p class="mb-1 font-medium">{{.}}</p>{{end}}
-        <p>{{.}}</p>
-      </div>
-      {{- end}}
-
-      <section>
-        <h3 class="mb-3 text-xs font-semibold tracking-wide text-slate-500 uppercase">Details</h3>
-        <dl class="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-2 text-sm">
-          {{- range .Fields}}
-          <dt class="text-slate-500">{{.Label}}</dt>
-          <dd class="min-w-0 break-all{{if .Mono}} font-mono text-xs leading-5{{end}}">
-            {{- if not .Time.IsZero}}<time datetime="{{datetime .Time}}" title="{{timestamp .Time}}">{{ago .Time}}</time> ago{{else}}{{.Value}}{{end -}}
-          </dd>
-          {{- end}}
-          <dt class="text-slate-500">Generation</dt>
-          <dd>{{.Generation}}{{if and (lt .ObservedGeneration .Generation) (ne .Status.State "Static")}} <span class="text-amber-700 dark:text-amber-400">(observed {{.ObservedGeneration}})</span>{{end}}</dd>
-        </dl>
-      </section>
-
-      <section>
-        <h3 class="mb-3 text-xs font-semibold tracking-wide text-slate-500 uppercase">Conditions</h3>
-        {{- if .Conditions}}
-        <ul class="space-y-2">
-          {{- range .Conditions}}
-          <li class="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
-            <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
-              <span class="font-medium">{{.Type}}</span>
-              <span class="font-medium {{conditionClass .Status}}">{{.Status}}</span>
-              <span class="text-slate-500">{{.Reason}}</span>
-              <span class="ml-auto text-xs text-slate-400 tabular-nums"><time datetime="{{datetime .LastTransitionTime.Time}}" title="{{timestamp .LastTransitionTime.Time}}">{{ago .LastTransitionTime.Time}}</time> ago</span>
-            </div>
-            {{- with .Message}}
-            <p class="mt-1 text-sm break-words text-slate-600 dark:text-slate-300">{{.}}</p>
-            {{- end}}
-          </li>
-          {{- end}}
-        </ul>
-        {{- else}}
-        <p class="text-sm text-slate-500">No conditions reported.</p>
-        {{- end}}
-      </section>
+    {{- template "drawer-header" .}}
+    <div id="drawer-body" hx-get="/objects/{{.Kind.ID}}/{{.Namespace}}/{{.Name}}?part=body" hx-trigger="sse:{{.Kind.ID}}" hx-target="this" hx-swap="innerHTML">
+      {{- template "drawer-body" .}}
     </div>
-    {{- end}}
-    {{- end}}
   </aside>
 </div>
+{{- end}}
+
+{{define "drawer-refresh"}}{{template "drawer-body" .}}{{template "drawer-header" .}}{{end}}
+
+{{define "drawer-header" -}}
+<header id="drawer-header" class="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-200 bg-white/95 px-6 py-4 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95"{{if .OOB}} hx-swap-oob="true"{{end}}>
+  <div class="min-w-0">
+    <p class="text-xs font-medium tracking-wide text-slate-500 uppercase">{{.Kind.GVK.Kind}}</p>
+    <h2 id="drawer-title" class="mt-1 truncate text-lg font-semibold"><span class="text-slate-400 dark:text-slate-500">{{.Namespace}}/</span>{{.Name}}</h2>
+    {{- if not .Missing}}
+    <div class="mt-2 flex flex-wrap items-center gap-3">
+      {{- template "pill" .Detail.Status.State}}
+      {{- if .Detail.Pending}}{{template "pending" .Detail.Row}}{{end}}
+    </div>
+    {{- if .Actions}}{{template "actions" .}}{{end}}
+    {{- end}}
+  </div>
+  <button type="button" class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200" data-close-drawer aria-label="Close">
+    <svg viewBox="0 0 20 20" fill="currentColor" class="size-5" aria-hidden="true"><path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"/></svg>
+  </button>
+</header>
+{{- end}}
+
+{{define "drawer-body" -}}
+{{- if .Missing}}
+<p class="px-6 py-5 text-sm text-slate-500">This object does not exist (anymore).</p>
+{{- else}}
+{{- with .Detail}}
+<div class="space-y-6 px-6 py-5">
+  {{- with .Status.Message}}
+  <div class="rounded-lg border p-3 text-sm break-words {{calloutClass $.Detail.Status.State}}">
+    {{- with $.Detail.Status.Reason}}<p class="mb-1 font-medium">{{.}}</p>{{end}}
+    <p>{{.}}</p>
+  </div>
+  {{- end}}
+
+  <section>
+    <h3 class="mb-3 text-xs font-semibold tracking-wide text-slate-500 uppercase">Details</h3>
+    <dl class="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-2 text-sm">
+      {{- range .Fields}}
+      <dt class="text-slate-500">{{.Label}}</dt>
+      <dd class="min-w-0 break-all{{if .Mono}} font-mono text-xs leading-5{{end}}">
+        {{- if not .Time.IsZero}}<time datetime="{{datetime .Time}}" title="{{timestamp .Time}}">{{ago .Time}}</time> ago{{else}}{{.Value}}{{end -}}
+      </dd>
+      {{- end}}
+      <dt class="text-slate-500">Generation</dt>
+      <dd>{{.Generation}}{{if and (lt .ObservedGeneration .Generation) (ne .Status.State "Static")}} <span class="text-amber-700 dark:text-amber-400">(observed {{.ObservedGeneration}})</span>{{end}}</dd>
+    </dl>
+  </section>
+
+  <section>
+    <h3 class="mb-3 text-xs font-semibold tracking-wide text-slate-500 uppercase">Conditions</h3>
+    {{- if .Conditions}}
+    <ul class="space-y-2">
+      {{- range .Conditions}}
+      <li class="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+        <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
+          <span class="font-medium">{{.Type}}</span>
+          <span class="font-medium {{conditionClass .Status}}">{{.Status}}</span>
+          <span class="text-slate-500">{{.Reason}}</span>
+          <span class="ml-auto text-xs text-slate-400 tabular-nums"><time datetime="{{datetime .LastTransitionTime.Time}}" title="{{timestamp .LastTransitionTime.Time}}">{{ago .LastTransitionTime.Time}}</time> ago</span>
+        </div>
+        {{- with .Message}}
+        <p class="mt-1 text-sm break-words text-slate-600 dark:text-slate-300">{{.}}</p>
+        {{- end}}
+      </li>
+      {{- end}}
+    </ul>
+    {{- else}}
+    <p class="text-sm text-slate-500">No conditions reported.</p>
+    {{- end}}
+  </section>
+</div>
+{{- end}}
+{{- end}}
 {{- end}}
 
 {{define "actions" -}}

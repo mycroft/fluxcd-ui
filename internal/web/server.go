@@ -281,6 +281,7 @@ type drawer struct {
 	Missing   bool
 	Actions   bool        // actions are enabled
 	Can       permissions // what the current user may do on this object
+	OOB       bool        // render the header as an out-of-band swap
 }
 
 // permissions are the actions offered to the current user in the drawer.
@@ -296,18 +297,24 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d := drawer{Kind: k, Namespace: r.PathValue("namespace"), Name: r.PathValue("name"), Actions: s.opts.Actions}
+	// ?part=body is the live refresh of an open drawer: its body, plus the
+	// header out of band.
+	tmpl := "drawer"
+	if r.URL.Query().Get("part") == "body" {
+		tmpl, d.OOB = "drawer-refresh", true
+	}
 
 	st := s.backend.State(k.ID)
 	if !st.Installed || !st.Synced {
 		d.Missing = true
-		s.render(w, http.StatusNotFound, "drawer", d)
+		s.render(w, http.StatusNotFound, tmpl, d)
 		return
 	}
 	detail, err := s.backend.Get(r.Context(), k, d.Namespace, d.Name)
 	switch {
 	case apierrors.IsNotFound(err):
 		d.Missing = true
-		s.render(w, http.StatusNotFound, "drawer", d)
+		s.render(w, http.StatusNotFound, tmpl, d)
 	case err != nil:
 		s.log.Error("getting object", "kind", k.ID, "namespace", d.Namespace, "name", d.Name, "err", err)
 		http.Error(w, "failed to get object", http.StatusInternalServerError)
@@ -316,7 +323,7 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request) {
 		if d.Actions {
 			d.Can = s.permissions(r, store.ObjectRef{Kind: k.GVK.Kind, Namespace: d.Namespace, Name: d.Name})
 		}
-		s.render(w, http.StatusOK, "drawer", d)
+		s.render(w, http.StatusOK, tmpl, d)
 	}
 }
 

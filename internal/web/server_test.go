@@ -329,3 +329,25 @@ func TestStaticCountsAsReady(t *testing.T) {
 	assertContains(t, body, ">ghcr<", "</span>Static</span>", ">grafana<")
 	assertNotContains(t, body, ">podinfo<")
 }
+
+func TestDrawerRefreshKeepsFrame(t *testing.T) {
+	srv, _ := newTestServer(t, false)
+
+	_, full := get(t, srv, "/objects/helmreleases/apps/podinfo")
+	assertContains(t, full, `id="drawer-panel"`, `id="drawer-body"`, `?part=body`)
+
+	// The live refresh returns only the body, with the header out of band:
+	// the frame (and its scroll position) is never replaced.
+	res, body := get(t, srv, "/objects/helmreleases/apps/podinfo?part=body")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", res.StatusCode)
+	}
+	assertContains(t, body, "install retries exhausted", `id="drawer-header"`, `hx-swap-oob="true"`)
+	assertNotContains(t, body, `id="drawer-panel"`, `id="drawer-body"`)
+
+	res, body = get(t, srv, "/objects/helmreleases/apps/gone?part=body")
+	if res.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing object: status = %d", res.StatusCode)
+	}
+	assertContains(t, body, "does not exist")
+}
