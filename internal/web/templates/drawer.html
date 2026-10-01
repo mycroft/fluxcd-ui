@@ -227,12 +227,12 @@
 {{- else}}
 <ol class="max-h-96 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-3 font-mono text-xs leading-5 dark:border-slate-800 dark:bg-slate-950">
   {{- range .Lines}}
-  <li class="break-words whitespace-pre-wrap">
+  <li class="break-words">
     {{- /* A span, not <time>: app.js rewrites <time> elements as relative times. */ -}}
     <span class="text-slate-400" title="{{timestamp .Time}}">{{clock .Time}}</span>
     <span class="{{logLevelClass .Level}}">{{.Level}}</span>
-    <span class="text-slate-700 dark:text-slate-300">{{.Message}}</span>
-    {{- with .Error}} <span class="text-red-600 dark:text-red-400">{{.}}</span>{{end}}
+    <span class="whitespace-pre-wrap text-slate-700 dark:text-slate-300">{{.Message}}</span>
+    {{- with .Error}} <span class="whitespace-pre-wrap text-red-600 dark:text-red-400">{{.}}</span>{{end}}
   </li>
   {{- end}}
 </ol>
