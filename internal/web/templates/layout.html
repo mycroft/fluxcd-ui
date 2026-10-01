@@ -42,7 +42,8 @@
             {{- end}}
           </select>
         </label>
-        <span id="live" data-live="connecting" class="group ml-auto flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400" title="Live updates">
+        <span class="ml-auto font-mono text-xs text-slate-400 dark:text-slate-500" title="fluxcd-ui version">{{displayVersion .Version}}</span>
+        <span id="live" data-live="connecting" class="group flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400" title="Live updates">
           <span class="size-2 rounded-full bg-slate-400 group-data-[live=open]:bg-emerald-500 group-data-[live=closed]:bg-red-500"></span>
           <span data-label>Connecting…</span>
         </span>

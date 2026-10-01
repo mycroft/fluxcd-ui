@@ -3,6 +3,7 @@ package web
 import (
 	"fmt"
 	"html/template"
+	"regexp"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -67,7 +68,8 @@ func templateFuncs() template.FuncMap {
 			return defaultCalloutClass
 		},
 		// showMessage reports whether a row should surface its status message.
-		"clock": func(t time.Time) string { return t.UTC().Format("01-02 15:04:05") },
+		"clock":          func(t time.Time) string { return t.UTC().Format("01-02 15:04:05") },
+		"displayVersion": displayVersion,
 		"logLevelClass": func(level string) string {
 			switch level {
 			case "error", "dpanic", "panic", "fatal":
@@ -102,6 +104,18 @@ func templateFuncs() template.FuncMap {
 			return s.Message != "" && (s.State == flux.StateFailed || s.State == flux.StateProgressing || s.State == flux.StateUnknown)
 		},
 	}
+}
+
+// releaseVersion matches the versions of release builds, e.g. "0.2.0".
+var releaseVersion = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+`)
+
+// displayVersion shows release versions as "v0.2.0"; other builds keep their
+// version as is: a commit for builds from main, "dev" for local ones.
+func displayVersion(v string) string {
+	if releaseVersion.MatchString(v) {
+		return "v" + v
+	}
+	return v
 }
 
 var now = time.Now

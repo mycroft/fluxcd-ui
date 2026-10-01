@@ -471,3 +471,14 @@ func TestDrawerReleaseHistory(t *testing.T) {
 	_, body = get(t, srv, "/objects/kustomizations/flux-system/apps")
 	assertNotContains(t, body, "Release history")
 }
+
+func TestDisplayVersion(t *testing.T) {
+	for in, want := range map[string]string{"0.2.0": "v0.2.0", "1.10.3-rc.1": "v1.10.3-rc.1", "64146c5": "64146c5", "dev": "dev"} {
+		if got := displayVersion(in); got != want {
+			t.Errorf("displayVersion(%q) = %q, want %q", in, got, want)
+		}
+	}
+	srv, _, _ := newTestServerWith(t, false, Options{Version: "0.2.0"})
+	_, body := get(t, srv, "/")
+	assertContains(t, body, `title="fluxcd-ui version">v0.2.0</span>`)
+}
