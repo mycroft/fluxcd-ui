@@ -1,0 +1,44 @@
+{{- if and .Values.rbac.create .Values.managedObjects.status.enabled -}}
+# Reading the objects Kustomizations and HelmReleases manage, to show their
+# health: the built-in "view" role reads most resources but never Secrets.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "fluxcd-ui.fullname" . }}-view
+  labels:
+    {{- include "fluxcd-ui.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "fluxcd-ui.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- with .Values.managedObjects.status.extraRules }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "fluxcd-ui.fullname" $ }}-status
+  labels:
+    {{- include "fluxcd-ui.labels" $ | nindent 4 }}
+rules:
+  {{- toYaml . | nindent 2 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "fluxcd-ui.fullname" $ }}-status
+  labels:
+    {{- include "fluxcd-ui.labels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "fluxcd-ui.fullname" $ }}-status
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "fluxcd-ui.serviceAccountName" $ }}
+    namespace: {{ $.Release.Namespace }}
+{{- end }}
+{{- end }}

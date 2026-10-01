@@ -38,6 +38,7 @@ spec:
             - {{ printf "--log-format=%s" .Values.logFormat | quote }}
             - {{ printf "--flux-namespace=%s" .Values.fluxNamespace | quote }}
             - {{ printf "--controller-logs=%t" .Values.logs.enabled | quote }}
+            - {{ printf "--managed-objects-status=%t" .Values.managedObjects.status.enabled | quote }}
             {{- if .Values.actions.enabled }}
             - --enable-actions
             {{- end }}

@@ -482,3 +482,51 @@ func TestDisplayVersion(t *testing.T) {
 	_, body := get(t, srv, "/")
 	assertContains(t, body, `title="fluxcd-ui version">v0.2.0</span>`)
 }
+
+func TestDrawerInventoryHealth(t *testing.T) {
+	infra := &kustomizev1.Kustomization{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "flux-system", Name: "infra"},
+		Status: kustomizev1.KustomizationStatus{Inventory: &kustomizev1.ResourceInventory{Entries: []kustomizev1.ResourceRef{
+			{ID: "apps_podinfo_helm.toolkit.fluxcd.io_HelmRelease", Version: "v2"}, // failed, in the fixtures
+			{ID: "_apps__Namespace", Version: "v1"},                                // not in the cluster
+			{ID: "apps_cfg__ConfigMap", Version: "v1"},
+		}}},
+	}
+	srv, _, _ := newTestServerWith(t, false, Options{ManagedStatus: true}, infra,
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "cfg"}})
+
+	// The drawer renders the list at once and loads health in the background.
+	_, body := get(t, srv, "/objects/kustomizations/flux-system/infra")
+	assertContains(t, body, `hx-get="/objects/kustomizations/flux-system/infra/inventory" hx-trigger="load"`, "checking status…")
+
+	res, body := get(t, srv, "/objects/kustomizations/flux-system/infra/inventory")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", res.StatusCode)
+	}
+	assertContains(t, body,
+		"1 Failed", "1 Missing", "1 Ready", // summary, problems first
+		"install retries exhausted", // the HelmRelease's own message
+		"not found in the cluster",
+		"need attention", "Refresh",
+	)
+	assertNotContains(t, body, `hx-trigger="load"`, "checking status…")
+	if strings.Index(body, "1 Failed") > strings.Index(body, "1 Ready") {
+		t.Error("summary does not list problems first")
+	}
+}
+
+func TestDrawerInventoryHealthDisabled(t *testing.T) {
+	srv, _, _ := newTestServerWith(t, false, Options{},
+		&kustomizev1.Kustomization{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "flux-system", Name: "infra"},
+			Status: kustomizev1.KustomizationStatus{Inventory: &kustomizev1.ResourceInventory{Entries: []kustomizev1.ResourceRef{
+				{ID: "_apps__Namespace", Version: "v1"},
+			}}},
+		})
+	_, body := get(t, srv, "/objects/kustomizations/flux-system/infra")
+	assertContains(t, body, "Managed objects")
+	assertNotContains(t, body, `/inventory"`, "checking status…")
+	if res, _ := get(t, srv, "/objects/kustomizations/flux-system/infra/inventory"); res.StatusCode != http.StatusNotFound {
+		t.Errorf("inventory status = %d, want 404", res.StatusCode)
+	}
+}

@@ -2,6 +2,13 @@
 fluxNamespace: flux
 logs:
   enabled: true
+managedObjects:
+  status:
+    enabled: true
+    extraRules:
+      - apiGroups: ["postgresql.cnpg.io"]
+        resources: ["clusters", "databases"]
+        verbs: ["get", "list"]
 actions:
   enabled: true
 auth:

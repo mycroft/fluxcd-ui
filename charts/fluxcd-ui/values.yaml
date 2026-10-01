@@ -30,6 +30,20 @@ logs:
   # drawer. Grants reading pods and their logs in fluxNamespace only.
   enabled: true
 
+managedObjects:
+  status:
+    # Show the health of the objects a Kustomization or HelmRelease manages,
+    # in its detail drawer. Binds the built-in "view" ClusterRole, which
+    # reads most resources but never Secrets.
+    enabled: true
+    # Extra read rules for kinds "view" does not cover (custom resources
+    # whose roles do not aggregate to view). Objects still unreadable show
+    # as "no access".
+    extraRules: []
+    #  - apiGroups: ["postgresql.cnpg.io"]
+    #    resources: ["clusters", "databases"]
+    #    verbs: ["get", "list"]
+
 actions:
   # Allow suspending, resuming and reconciling Flux objects from the UI.
   # Anyone who can reach the UI can then do so: only enable this behind an

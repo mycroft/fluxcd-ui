@@ -39,6 +39,7 @@ func main() {
 	subjectPrefix := flag.String("subject-prefix", "fluxcd-ui:", "prefix added to user and group names before checking RBAC")
 	fluxNamespace := flag.String("flux-namespace", "flux-system", "namespace of the Flux controllers, whose logs the drawer shows")
 	controllerLogs := flag.Bool("controller-logs", true, "offer the Flux controllers' logs about an object in its drawer (requires reading pods and pods/log in --flux-namespace)")
+	managedStatus := flag.Bool("managed-objects-status", true, "show the health of the objects a Kustomization or HelmRelease manages (requires read access to them, e.g. the built-in view ClusterRole)")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse() // also parses --kubeconfig, registered by controller-runtime
 
@@ -59,6 +60,7 @@ func main() {
 		GroupsHeader:    *groupsHeader,
 		GroupsSeparator: *groupsSeparator,
 		Logs:            *controllerLogs,
+		ManagedStatus:   *managedStatus,
 	}
 	if err := checkAuthorization(*authorization, *userHeader, *subjectPrefix); err != nil {
 		fmt.Fprintln(os.Stderr, err)

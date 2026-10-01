@@ -45,6 +45,7 @@ type Store struct {
 	// with New.
 	clientset     kubernetes.Interface
 	fluxNamespace string
+	health        healthCache // computed health of managed objects
 	broker        *Broker
 	log           *slog.Logger
 

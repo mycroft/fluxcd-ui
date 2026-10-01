@@ -43,6 +43,7 @@ type Backend interface {
 	Related(ctx context.Context, k flux.Kind, namespace, name string) []store.ObjectRef
 	Events(ctx context.Context, refs ...store.ObjectRef) []store.Event
 	ControllerLogs(ctx context.Context, k flux.Kind, namespace, name string) ([]store.LogLine, error)
+	ManagedHealth(ctx context.Context, entries []flux.InventoryEntry) map[string]store.ObjectHealth
 }
 
 // Options configures a Server.
@@ -61,6 +62,9 @@ type Options struct {
 	Authorizer authz.Authorizer
 	// Logs offers the controller logs about an object in its drawer.
 	Logs bool
+	// ManagedStatus checks the health of the objects a Kustomization or
+	// HelmRelease manages when its drawer opens.
+	ManagedStatus bool
 }
 
 // Server is the HTTP handler of the UI.
@@ -107,6 +111,7 @@ func New(backend Backend, broker *store.Broker, opts Options, log *slog.Logger) 
 	s.mux.HandleFunc("GET /fragments/rows/{kind}", s.handleRows)
 	s.mux.HandleFunc("GET /objects/{kind}/{namespace}/{name}", s.handleObject)
 	s.mux.HandleFunc("GET /objects/{kind}/{namespace}/{name}/logs", s.handleLogs)
+	s.mux.HandleFunc("GET /objects/{kind}/{namespace}/{name}/inventory", s.handleInventory)
 	s.mux.HandleFunc("POST /objects/{kind}/{namespace}/{name}/{action}", s.handleAction)
 	s.mux.HandleFunc("GET /events", s.handleEvents)
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
@@ -285,6 +290,7 @@ type drawer struct {
 	Name      string
 	Detail    flux.Detail
 	Events    []store.Event // about the object and its sources, newest first
+	Inventory inventoryView
 	Missing   bool
 	Actions   bool        // actions are enabled
 	Logs      bool        // controller logs are offered
@@ -329,6 +335,9 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request) {
 	default:
 		d.Detail = detail
 		d.Events = s.backend.Events(r.Context(), s.backend.Related(r.Context(), k, d.Namespace, d.Name)...)
+		if detail.HasInventory && !d.OOB {
+			d.Inventory = newInventoryView(objectPath(k, d.Namespace, d.Name), detail, s.opts.ManagedStatus, nil)
+		}
 		if d.Actions {
 			d.Can = s.permissions(r, store.ObjectRef{Kind: k.GVK.Kind, Namespace: d.Namespace, Name: d.Name})
 		}
@@ -506,6 +515,37 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		s.log.Warn("reading controller logs", "kind", k.ID, "namespace", r.PathValue("namespace"), "name", r.PathValue("name"), "err", v.Err)
 	}
 	s.render(w, http.StatusOK, "logs", v)
+}
+
+// handleInventory serves the managed objects section with each object's
+// health, which the drawer loads once it is open.
+func (s *Server) handleInventory(w http.ResponseWriter, r *http.Request) {
+	k, ok := flux.KindByID(r.PathValue("kind"))
+	if !ok || !s.opts.ManagedStatus {
+		http.NotFound(w, r)
+		return
+	}
+	namespace, name := r.PathValue("namespace"), r.PathValue("name")
+	detail, err := s.backend.Get(r.Context(), k, namespace, name)
+	switch {
+	case apierrors.IsNotFound(err):
+		http.NotFound(w, r)
+		return
+	case err != nil:
+		s.log.Error("getting object", "kind", k.ID, "namespace", namespace, "name", name, "err", err)
+		http.Error(w, "failed to get object", http.StatusInternalServerError)
+		return
+	}
+	var entries []flux.InventoryEntry
+	for _, g := range detail.Inventory {
+		entries = append(entries, g.Entries...)
+	}
+	health := s.backend.ManagedHealth(r.Context(), entries)
+	s.render(w, http.StatusOK, "inventory", newInventoryView(objectPath(k, namespace, name), detail, true, health))
+}
+
+func objectPath(k flux.Kind, namespace, name string) string {
+	return "/objects/" + k.ID + "/" + namespace + "/" + name
 }
 
 func (s *Server) handleReadyz(w http.ResponseWriter, _ *http.Request) {

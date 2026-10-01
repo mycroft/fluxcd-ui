@@ -10,6 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/mycroft/fluxcd-ui/internal/flux"
+	"github.com/mycroft/fluxcd-ui/internal/store"
 )
 
 // Class names below are picked up by Tailwind (see styles/app.css @source).
@@ -44,6 +45,28 @@ var calloutClasses = map[flux.State]string{
 }
 
 const defaultCalloutClass = "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-300"
+
+var healthDotClasses = map[store.Health]string{
+	store.HealthReady:       "bg-emerald-500",
+	store.HealthProgressing: "bg-amber-500",
+	store.HealthTerminating: "bg-amber-500",
+	store.HealthFailed:      "bg-red-500",
+	store.HealthMissing:     "bg-red-500",
+	store.HealthSuspended:   "bg-slate-400",
+	store.HealthUnknown:     "bg-zinc-300 dark:bg-zinc-600",
+	store.HealthNoAccess:    "bg-zinc-300 dark:bg-zinc-600",
+}
+
+var healthClasses = map[store.Health]string{
+	store.HealthReady:       "text-emerald-700 dark:text-emerald-400",
+	store.HealthProgressing: "text-amber-700 dark:text-amber-400",
+	store.HealthTerminating: "text-amber-700 dark:text-amber-400",
+	store.HealthFailed:      "font-medium text-red-700 dark:text-red-400",
+	store.HealthMissing:     "font-medium text-red-700 dark:text-red-400",
+	store.HealthSuspended:   "text-slate-500",
+	store.HealthUnknown:     "text-zinc-500",
+	store.HealthNoAccess:    "text-zinc-500",
+}
 
 var conditionClasses = map[metav1.ConditionStatus]string{
 	metav1.ConditionTrue:    "text-emerald-700 dark:text-emerald-400",
@@ -82,6 +105,8 @@ func templateFuncs() template.FuncMap {
 				return "text-sky-700 dark:text-sky-400"
 			}
 		},
+		"healthDot":   func(h store.Health) string { return healthDotClasses[h] },
+		"healthClass": func(h store.Health) string { return healthClasses[h] },
 		"releaseStatusClass": func(status string) string {
 			switch status {
 			case "deployed":
