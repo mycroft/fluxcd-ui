@@ -1,0 +1,41 @@
+# Every optional feature turned on, for CI (helm lint, kubeconform).
+actions:
+  enabled: true
+auth:
+  userHeader: X-authentik-username
+  groupsHeader: X-authentik-groups
+  groupsSeparator: "|"
+authorization:
+  mode: rbac
+imagePullSecrets:
+  - name: registry-credentials
+serviceAccount:
+  annotations:
+    example.com/annotation: "true"
+podAnnotations:
+  example.com/annotation: "true"
+podLabels:
+  team: platform
+extraArgs:
+  - --log-level=debug
+ingress:
+  enabled: true
+  className: traefik
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: fluxcd-ui-authentik@kubernetescrd
+  hosts:
+    - host: flux.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: flux-example-com-tls
+      hosts:
+        - flux.example.com
+nodeSelector:
+  kubernetes.io/os: linux
+tolerations:
+  - key: dedicated
+    operator: Equal
+    value: platform
+    effect: NoSchedule
