@@ -6,6 +6,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
 	"os"
 	"slices"
@@ -344,13 +345,16 @@ func (d *Differ) namespaced(gvk schema.GroupVersionKind) (bool, error) {
 }
 
 // listLive fills lists with the live objects of each kind and namespace.
+// Each list is fetched concurrently into its own slot; the map is only
+// written once they are all done.
 func (d *Differ) listLive(ctx context.Context, lists map[listKey]*liveList) {
+	keys := slices.Collect(maps.Keys(lists))
+	results := make([]*liveList, len(keys))
 	var (
-		mu  sync.Mutex
 		wg  sync.WaitGroup
 		sem = make(chan struct{}, listConcurrency)
 	)
-	for k := range lists {
+	for i, k := range keys {
 		wg.Go(func() {
 			sem <- struct{}{}
 			defer func() { <-sem }()
@@ -358,16 +362,17 @@ func (d *Differ) listLive(ctx context.Context, lists map[listKey]*liveList) {
 			ul.SetGroupVersionKind(k.gvk.GroupVersion().WithKind(k.gvk.Kind + "List"))
 			l := &liveList{byName: map[string]*unstructured.Unstructured{}}
 			if l.err = d.client.List(ctx, ul, client.InNamespace(k.namespace)); l.err == nil {
-				for i := range ul.Items {
-					l.byName[ul.Items[i].GetName()] = &ul.Items[i]
+				for j := range ul.Items {
+					l.byName[ul.Items[j].GetName()] = &ul.Items[j]
 				}
 			}
-			mu.Lock()
-			lists[k] = l
-			mu.Unlock()
+			results[i] = l
 		})
 	}
 	wg.Wait()
+	for i, k := range keys {
+		lists[k] = results[i]
+	}
 }
 
 func objectID(group, kind, namespace, name string) string {
