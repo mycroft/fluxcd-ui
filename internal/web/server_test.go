@@ -451,3 +451,23 @@ func TestDrawerInventory(t *testing.T) {
 	_, body = get(t, srv, "/objects/gitrepositories/flux-system/flux-system")
 	assertNotContains(t, body, "Managed objects")
 }
+
+func TestDrawerReleaseHistory(t *testing.T) {
+	srv, _, _ := newTestServerWith(t, false, Options{},
+		&helmv2.HelmRelease{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "web"},
+			Status: helmv2.HelmReleaseStatus{History: helmv2.Snapshots{
+				{Version: 2, ChartName: "web", ChartVersion: "1.1.0", Status: "failed", Action: "upgrade"},
+				{Version: 1, ChartName: "web", ChartVersion: "1.0.0", Status: "deployed", Action: "install"},
+			}},
+		},
+	)
+	_, body := get(t, srv, "/objects/helmreleases/apps/web?part=body") // part of the live refresh
+	assertContains(t, body, "Release history", "web@1.1.0", "web@1.0.0", "font-medium text-red-700", "install")
+	if strings.Index(body, "web@1.1.0") > strings.Index(body, "web@1.0.0") {
+		t.Error("revisions are not newest first")
+	}
+
+	_, body = get(t, srv, "/objects/kustomizations/flux-system/apps")
+	assertNotContains(t, body, "Release history")
+}

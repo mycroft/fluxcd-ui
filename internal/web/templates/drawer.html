@@ -101,6 +101,36 @@
     {{- end}}
   </section>
 
+  {{- with .History}}
+  <section>
+    <h3 class="mb-3 text-xs font-semibold tracking-wide text-slate-500 uppercase">Release history</h3>
+    <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
+      <table class="w-full text-left text-sm">
+        <thead class="bg-slate-50 text-xs text-slate-500 dark:bg-slate-900/60">
+          <tr>
+            <th scope="col" class="px-3 py-1.5 font-medium">Revision</th>
+            <th scope="col" class="px-3 py-1.5 font-medium">Chart</th>
+            <th scope="col" class="px-3 py-1.5 font-medium">App version</th>
+            <th scope="col" class="px-3 py-1.5 font-medium">Status</th>
+            <th scope="col" class="px-3 py-1.5 text-right font-medium">Deployed</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+          {{- range .}}
+          <tr>
+            <td class="px-3 py-1.5 tabular-nums">{{.Revision}}</td>
+            <td class="px-3 py-1.5 font-mono text-xs">{{.Chart}}</td>
+            <td class="px-3 py-1.5 font-mono text-xs">{{or .AppVersion "—"}}</td>
+            <td class="px-3 py-1.5"><span class="{{releaseStatusClass .Status}}">{{.Status}}</span>{{with .Action}} <span class="text-xs text-slate-400">{{.}}</span>{{end}}</td>
+            <td class="px-3 py-1.5 text-right whitespace-nowrap text-slate-500 tabular-nums"><time datetime="{{datetime .Deployed}}" title="{{timestamp .Deployed}}">{{ago .Deployed}}</time></td>
+          </tr>
+          {{- end}}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {{- end}}
+
   {{- template "events" $}}
 </div>
 {{- end}}

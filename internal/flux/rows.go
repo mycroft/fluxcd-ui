@@ -2,6 +2,7 @@ package flux
 
 import (
 	"cmp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -178,7 +179,29 @@ func describeHelmRelease(o *helmv2.HelmRelease) Detail {
 		}
 		d.Inventory = groupInventory(refs)
 	}
+	d.History = releaseHistory(o.Status.History)
 	return d
+}
+
+// releaseHistory returns the release revisions, newest first, without
+// reordering the (shared, cached) history itself.
+func releaseHistory(history helmv2.Snapshots) []Release {
+	releases := make([]Release, 0, len(history))
+	for _, s := range history {
+		if s == nil {
+			continue
+		}
+		releases = append(releases, Release{
+			Revision:   s.Version,
+			Chart:      s.ChartName + "@" + s.ChartVersion,
+			AppVersion: s.AppVersion,
+			Status:     s.Status,
+			Action:     string(s.Action),
+			Deployed:   s.LastDeployed.Time,
+		})
+	}
+	slices.SortFunc(releases, func(a, b Release) int { return cmp.Compare(b.Revision, a.Revision) })
+	return releases
 }
 
 func describeKustomization(o *kustomizev1.Kustomization) Detail {

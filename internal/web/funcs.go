@@ -80,6 +80,18 @@ func templateFuncs() template.FuncMap {
 				return "text-sky-700 dark:text-sky-400"
 			}
 		},
+		"releaseStatusClass": func(status string) string {
+			switch status {
+			case "deployed":
+				return "font-medium text-emerald-700 dark:text-emerald-400"
+			case "failed":
+				return "font-medium text-red-700 dark:text-red-400"
+			case "pending-install", "pending-upgrade", "pending-rollback", "uninstalling":
+				return "font-medium text-amber-700 dark:text-amber-400"
+			default: // superseded, uninstalled, unknown
+				return "text-slate-500"
+			}
+		},
 		"eventClass": func(typ string) string {
 			if typ == corev1.EventTypeWarning {
 				return "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400"

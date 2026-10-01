@@ -61,6 +61,18 @@ type Detail struct {
 	// objects it applies (Kustomizations and HelmReleases).
 	HasInventory bool
 	Inventory    []InventoryGroup
+	// History lists a HelmRelease's Helm release revisions, newest first.
+	History []Release
+}
+
+// Release is one Helm release revision of a HelmRelease.
+type Release struct {
+	Revision   int
+	Chart      string // name@version
+	AppVersion string
+	Status     string // deployed, superseded, failed, ...
+	Action     string // install, upgrade, ...
+	Deployed   time.Time
 }
 
 // InventoryCount is the number of objects in the inventory.

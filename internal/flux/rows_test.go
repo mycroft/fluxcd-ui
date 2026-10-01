@@ -263,3 +263,28 @@ func TestBucketRow(t *testing.T) {
 	o.Spec.Provider, o.Spec.Prefix = "aws", ""
 	assertCells(t, k.Describe(o).Row, "minio.example.com", "fleet", "aws")
 }
+
+func TestHelmReleaseHistory(t *testing.T) {
+	deployed := time.Date(2026, 9, 26, 11, 25, 49, 0, time.UTC)
+	o := &helmv2.HelmRelease{
+		ObjectMeta: objectMeta("alloy", "alloy"),
+		Status: helmv2.HelmReleaseStatus{History: helmv2.Snapshots{
+			{Version: 60, ChartName: "alloy", ChartVersion: "1.12.0", Status: "superseded", Action: "upgrade"},
+			{Version: 62, ChartName: "alloy", ChartVersion: "1.13.1", Status: "failed", Action: "upgrade"},
+			{Version: 61, ChartName: "alloy", ChartVersion: "1.13.0", AppVersion: "v1.20.0", Status: "deployed", Action: "upgrade", LastDeployed: metav1.NewTime(deployed)},
+		}},
+	}
+	h := kind(t, "helmreleases").Describe(o).History
+	if len(h) != 3 || h[0].Revision != 62 || h[1].Revision != 61 || h[2].Revision != 60 {
+		t.Fatalf("history = %+v, want newest first", h)
+	}
+	if r := h[1]; r.Chart != "alloy@1.13.0" || r.AppVersion != "v1.20.0" || r.Status != "deployed" || r.Action != "upgrade" || !r.Deployed.Equal(deployed) {
+		t.Errorf("revision 61 = %+v", r)
+	}
+	if o.Status.History[0].Version != 60 {
+		t.Error("the cached history was reordered")
+	}
+	if h := kind(t, "kustomizations").Describe(kind(t, "kustomizations").NewObject()).History; h != nil {
+		t.Errorf("a Kustomization has no release history: %+v", h)
+	}
+}
