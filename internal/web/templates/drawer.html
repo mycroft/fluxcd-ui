@@ -9,6 +9,7 @@
     <div id="drawer-body" hx-get="/objects/{{.Kind.ID}}/{{.Namespace}}/{{.Name}}?part=body" hx-trigger="sse:{{.Kind.ID}}, sse:events" hx-target="this" hx-swap="innerHTML">
       {{- template "drawer-body" .}}
     </div>
+    {{- if and (not .Missing) .Detail.HasInventory}}{{template "inventory" .Detail}}{{end}}
     {{- if and .Logs (not .Missing)}}
     <section class="px-6 pb-6">
       <div class="mb-3 flex items-center gap-3">
@@ -207,4 +208,45 @@
 </ol>
 <p class="mt-2 text-xs text-slate-500">{{len .Lines}} lines, newest first, loaded at {{clock .Now}} UTC.</p>
 {{- end}}
+{{- end}}
+
+{{define "inventory" -}}
+{{- /* Rendered once with the drawer, outside the live-refreshed body: it can
+       hold hundreds of objects and rarely changes. */ -}}
+{{- $count := .InventoryCount}}
+<section class="px-6 pb-6">
+  <h3 class="mb-3 flex items-center gap-2 text-xs font-semibold tracking-wide text-slate-500 uppercase">
+    Managed objects
+    <span class="rounded-full bg-slate-100 px-2 py-0.5 font-medium tabular-nums normal-case text-slate-600 dark:bg-slate-800 dark:text-slate-300">{{$count}}</span>
+  </h3>
+  {{- if .Inventory}}
+  <div class="divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+    {{- range .Inventory}}
+    <details class="group/inv"{{if le $count 30}} open{{end}}>
+      <summary class="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm select-none hover:bg-slate-50 dark:hover:bg-slate-800/40">
+        <svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 shrink-0 text-slate-400 transition-transform group-open/inv:rotate-90" aria-hidden="true"><path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 0 1 .02-1.06L11.17 10 7.23 6.29a.75.75 0 1 1 1.04-1.08l4.5 4.25a.75.75 0 0 1 0 1.08l-4.5 4.25a.75.75 0 0 1-1.06-.02Z" clip-rule="evenodd"/></svg>
+        <span class="font-medium">{{.Kind}}</span>
+        <span class="font-mono text-xs text-slate-400">{{.APIVersion}}</span>
+        <span class="ml-auto text-xs text-slate-500 tabular-nums">{{len .Entries}}</span>
+      </summary>
+      <ul class="px-3 pb-2 pl-9 text-sm">
+        {{- range .Entries}}
+        <li class="truncate py-0.5">
+          {{- if .KindID}}
+          <button type="button" class="truncate text-left text-indigo-600 hover:underline dark:text-indigo-400" hx-get="/objects/{{.KindID}}/{{.Namespace}}/{{.Name}}" hx-target="#drawer" hx-swap="innerHTML">
+            {{- with .Namespace}}<span class="text-indigo-400 dark:text-indigo-300/70">{{.}}/</span>{{end}}{{.Name -}}
+          </button>
+          {{- else}}
+          {{- with .Namespace}}<span class="text-slate-400 dark:text-slate-500">{{.}}/</span>{{end}}<span>{{.Name}}</span>
+          {{- end}}
+        </li>
+        {{- end}}
+      </ul>
+    </details>
+    {{- end}}
+  </div>
+  {{- else}}
+  <p class="text-sm text-slate-500">No inventory reported yet.</p>
+  {{- end}}
+</section>
 {{- end}}

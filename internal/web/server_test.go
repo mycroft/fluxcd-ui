@@ -427,3 +427,27 @@ func TestControllerLogsDisabled(t *testing.T) {
 		t.Errorf("logs status = %d, want 404", res.StatusCode)
 	}
 }
+
+func TestDrawerInventory(t *testing.T) {
+	srv, _, _ := newTestServerWith(t, false, Options{},
+		&kustomizev1.Kustomization{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "flux-system", Name: "infra"},
+			Status: kustomizev1.KustomizationStatus{Inventory: &kustomizev1.ResourceInventory{Entries: []kustomizev1.ResourceRef{
+				{ID: "apps_podinfo_helm.toolkit.fluxcd.io_HelmRelease", Version: "v2"},
+				{ID: "_apps__Namespace", Version: "v1"},
+			}}},
+		},
+	)
+
+	_, body := get(t, srv, "/objects/kustomizations/flux-system/infra")
+	assertContains(t, body, "Managed objects", "HelmRelease", "helm.toolkit.fluxcd.io/v2", "Namespace",
+		`hx-get="/objects/helmreleases/apps/podinfo"`, // Flux objects open their own drawer
+		`class="group/inv" open`)                      // small inventories start expanded
+
+	// The inventory is part of the drawer frame, not of the live refresh.
+	_, body = get(t, srv, "/objects/kustomizations/flux-system/infra?part=body")
+	assertNotContains(t, body, "Managed objects")
+
+	_, body = get(t, srv, "/objects/gitrepositories/flux-system/flux-system")
+	assertNotContains(t, body, "Managed objects")
+}

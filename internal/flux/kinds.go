@@ -57,6 +57,19 @@ type Detail struct {
 	// HasSource reports whether the object reconciles from another Flux
 	// object, which "reconcile with source" refreshes first.
 	HasSource bool
+	// HasInventory reports whether the kind keeps an inventory of the
+	// objects it applies (Kustomizations and HelmReleases).
+	HasInventory bool
+	Inventory    []InventoryGroup
+}
+
+// InventoryCount is the number of objects in the inventory.
+func (d Detail) InventoryCount() int {
+	n := 0
+	for _, g := range d.Inventory {
+		n += len(g.Entries)
+	}
+	return n
 }
 
 // Reconcilable reports whether Flux reconciles the object at all: suspended

@@ -169,6 +169,15 @@ func describeHelmRelease(o *helmv2.HelmRelease) Detail {
 	f.add("Depends on", dependsOn(o.Spec.DependsOn, o.Namespace))
 	f.addSchedule(o.Spec.Interval, o.Spec.Timeout)
 	d.Fields = f
+
+	d.HasInventory = true
+	if inv := o.Status.Inventory; inv != nil {
+		refs := make([]inventoryRef, len(inv.Entries))
+		for i, e := range inv.Entries {
+			refs[i] = inventoryRef{id: e.ID, version: e.Version}
+		}
+		d.Inventory = groupInventory(refs)
+	}
 	return d
 }
 
@@ -190,12 +199,18 @@ func describeKustomization(o *kustomizev1.Kustomization) Detail {
 	f.add("Prune", strconv.FormatBool(o.Spec.Prune))
 	f.addMono("Last applied revision", o.Status.LastAppliedRevision)
 	f.addMono("Last attempted revision", o.Status.LastAttemptedRevision)
-	if inv := o.Status.Inventory; inv != nil {
-		f.add("Managed objects", strconv.Itoa(len(inv.Entries)))
-	}
 	f.add("Depends on", dependsOn(o.Spec.DependsOn, o.Namespace))
 	f.addSchedule(o.Spec.Interval, o.Spec.Timeout)
 	d.Fields = f
+
+	d.HasInventory = true
+	if inv := o.Status.Inventory; inv != nil {
+		refs := make([]inventoryRef, len(inv.Entries))
+		for i, e := range inv.Entries {
+			refs[i] = inventoryRef{id: e.ID, version: e.Version}
+		}
+		d.Inventory = groupInventory(refs)
+	}
 	return d
 }
 

@@ -7,7 +7,7 @@ Supported kinds:
 - HelmReleases (`helm.toolkit.fluxcd.io/v2`)
 - Kustomizations (`kustomize.toolkit.fluxcd.io/v1`)
 
-Clicking an object opens a detail drawer: its key fields, conditions, the recent Kubernetes Events of the object and of the sources it reconciles from, and, on demand, what its Flux controller recently logged about it.
+Clicking an object opens a detail drawer: its key fields, conditions, the recent Kubernetes Events of the object and of the sources it reconciles from, the objects a Kustomization or HelmRelease manages (from its inventory, with links to the Flux objects among them), and, on demand, what its Flux controller recently logged about it.
 
 It requires **Flux 2.6+**, the first release where all of these are GA. If the cluster doesn't serve a kind, its section shows "not installed". Kinds are detected at startup, so restart the UI after installing new Flux CRDs.
 
