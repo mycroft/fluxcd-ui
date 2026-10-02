@@ -2,6 +2,11 @@
 
 A small, fast web UI for [Flux](https://fluxcd.io). It lists the Flux objects of a cluster on a single screen with their reconciliation state, and updates live as they change.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/overview-dark.png">
+  <img alt="Every Flux kind on one screen: status counts double as filters, failing objects show their message, and Kustomization and HelmRelease rows show the state of their source" src="docs/screenshots/overview-light.png">
+</picture>
+
 Supported kinds:
 - GitRepositories, OCIRepositories, Buckets, HelmRepositories, HelmCharts (`source.toolkit.fluxcd.io/v1`)
 - HelmReleases (`helm.toolkit.fluxcd.io/v2`)
@@ -10,6 +15,11 @@ Supported kinds:
 Kustomization and HelmRelease rows also show the state of their source, and call out one that has failed or is missing: a Kustomization's GitRepository, OCIRepository or Bucket; a HelmRelease's HelmChart (the one helm-controller generates from `spec.chart`, whose state covers fetching the chart), or the OCIRepository or HelmChart its `spec.chartRef` names.
 
 Clicking an object opens a detail drawer: its key fields, conditions, the recent Kubernetes Events of the object and of the sources it reconciles from, the objects a Kustomization or HelmRelease manages and their health (from its inventory, with links to the Flux objects among them), a Kustomization's diff between its source and the cluster, a browser for the files of a source's artifact, a HelmRelease's release history, and, on demand, the object's YAML and what its Flux controller recently logged about it.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/helmrelease-dark.png">
+  <img alt="A HelmRelease's drawer: actions, release history, events of the release and of its chart and repository, and the objects it manages" src="docs/screenshots/helmrelease-light.png">
+</picture>
 
 It requires **Flux 2.6+**, the first release where all of these are GA. If the cluster doesn't serve a kind, its section shows "not installed". Kinds are detected at startup, so restart the UI after installing new Flux CRDs.
 
@@ -25,7 +35,7 @@ By default the UI is read-only. With `--enable-actions`, the detail drawer can a
 
 ## Running locally
 
-The UI uses your current kubeconfig context and only needs `get`/`list`/`watch` on the kinds above.
+The UI uses your current kubeconfig context. It needs `get`/`list`/`watch` on the kinds above and on Events. The drawer's extras need more, and show what is missing when they lack it: read access to the managed objects (their health, the diff), `pods` and `pods/log` in the Flux namespace (controller logs), and `get` on source-controller's `services/proxy` (the diff and the artifact browser, which reach it through the API server outside the cluster).
 
 ```sh
 make run                      # http://localhost:8080
@@ -66,7 +76,8 @@ kubectl -n fluxcd-ui port-forward svc/fluxcd-ui 8080:80
 
 The chart creates:
 - a ServiceAccount,
-- a read-only ClusterRole on Flux objects and events, and its binding (`rbac.create`); `actions.enabled` adds `patch`,
+- a read-only ClusterRole on Flux objects and events, and its binding (`rbac.create`); `actions.enabled` adds `patch`, and `authorization.mode=rbac` adds creating SubjectAccessReviews,
+- with `authorization.mode=rbac`, three ClusterRoles to bind to your users and groups (`authorization.createRoles`, see [Authorization with Kubernetes RBAC](#authorization-with-kubernetes-rbac)),
 - a Role reading the controllers' pods and logs in `fluxNamespace` (`logs.enabled`),
 - a NetworkPolicy in `fluxNamespace` letting fluxcd-ui fetch artifacts from source-controller, for the diff and the artifact browser; Flux's default NetworkPolicies only open source-controller to the Flux namespace (`diff.networkPolicy.create`),
 - a binding to the built-in `view` ClusterRole, to check the health of managed objects and diff them (`managedObjects.status.enabled`, `diff.enabled`). `view` reads most resources but never Secrets; kinds it does not cover show as "no access" unless you grant them with `managedObjects.status.extraRules`,
@@ -88,6 +99,11 @@ Behind ingress-nginx, live updates work out of the box: the SSE response sets `X
 - text files are shown up to 1 MiB; binary files are not shown,
 - a HelmRepository's artifact is its index, shown as `index.yaml`.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/artifact-dark.png">
+  <img alt="The files of a GitRepository's artifact, with one of them open" src="docs/screenshots/artifact-light.png">
+</picture>
+
 Everyone who can reach the UI can read these files: set `artifactBrowser.enabled=false` (`--artifact-browser=false`) if your sources hold anything they should not see.
 
 ## Diffing a Kustomization
@@ -97,6 +113,11 @@ Everyone who can reach the UI can read these files: set `artifactBrowser.enabled
 1. fluxcd-ui downloads the artifact source-controller stored for the Kustomization's source, and verifies its digest.
 2. It builds it as kustomize-controller does, with Flux's own `kustomize` package: the generated `kustomization.yaml` (`images`, `patches`, `targetNamespace`, `namePrefix`, `components`...), then `postBuild` substitutions. Remote bases are not fetched.
 3. It compares each object with the live one, field by field, for the fields the source sets: defaults and fields other controllers manage are ignored, lists of named items (containers, env vars, ports) are matched by name, and quantities by value (`500m` equals `0.5`).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/diff-dark.png">
+  <img alt="A Kustomization's diff with its source: a Deployment whose image drifted from the one in Git" src="docs/screenshots/diff-light.png">
+</picture>
 
 The result lists objects that would be **changed** (with each field's cluster and source values), **created**, or **pruned**. When the source has a newer revision than the one last applied, the diff includes the changes not applied yet; otherwise, differences are drift.
 
@@ -265,6 +286,8 @@ This trusts the user and groups headers completely: a forged groups header is a 
 
 ## Building
 
+Building needs Go 1.26 and make; `make build` downloads the Tailwind standalone CLI itself.
+
 ```sh
 make build                    # bin/fluxcd-ui; downloads the Tailwind standalone CLI into bin/
 make test
@@ -276,7 +299,7 @@ make docker-build CONTAINER_TOOL=podman IMAGE=registry.example.com/fluxcd-ui TAG
 The Dockerfile needs BuildKit: Docker with buildx, or podman. It cross-compiles, so a multi-arch image is a single build:
 
 ```sh
-docker buildx build --platform linux/amd64,linux/arm64 -t registry.mkz.me/mycroft/fluxcd-ui:0.1.0 --push .
+docker buildx build --platform linux/amd64,linux/arm64 -t registry.example.com/fluxcd-ui:dev --push .
 ```
 
 ## CI and releases
@@ -340,9 +363,14 @@ The `mycroft` project allows anonymous pulls, so neither needs credentials.
 ```
 cmd/fluxcd-ui/       entrypoint: flags, logging, HTTP server
 internal/flux/       Flux kinds → table rows and detail views, status summarization
-internal/store/      discovery, informer cache, debounced change broker, actions
+internal/store/      discovery, informer cache, debounced change broker, actions, events,
+                     controller logs, managed objects' health, Helm release content
+internal/artifact/   verified artifact downloads, and the cache the artifact browser reads
+internal/diff/       Kustomization builds and their comparison with the cluster
+internal/authz/      RBAC authorization with SubjectAccessReviews
 internal/web/        handlers, SSE, templates, static assets, Tailwind input
 charts/fluxcd-ui/    Helm chart
+docs/screenshots/    README screenshots, taken on a demo cluster
 ```
 
 - Run `make css-watch` alongside `go run ./cmd/fluxcd-ui` while editing templates.
