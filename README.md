@@ -377,3 +377,7 @@ docs/screenshots/    README screenshots, taken on a demo cluster
 - The generated `internal/web/static/css/app.css` is not committed. `make build`, `make run` and the Docker build regenerate it.
 - To add a kind, add an entry to `flux.Kinds` with its columns and a `describe` function. Then add its resource to the chart's ClusterRole, for both the read and the `patch` rules.
 - Dependency versions are pinned in the Makefile. `make vendor-js` refreshes htmx.
+
+## License
+
+[MIT](LICENSE).
