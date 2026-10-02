@@ -9,7 +9,7 @@ Supported kinds:
 
 Each Kustomization row also shows the state of its source (GitRepository, OCIRepository or Bucket), and calls out a source that has failed or is missing.
 
-Clicking an object opens a detail drawer: its key fields, conditions, the recent Kubernetes Events of the object and of the sources it reconciles from, the objects a Kustomization or HelmRelease manages and their health (from its inventory, with links to the Flux objects among them), a Kustomization's diff between its source and the cluster, a browser for the files of a source's artifact, a HelmRelease's release history, and, on demand, what its Flux controller recently logged about it.
+Clicking an object opens a detail drawer: its key fields, conditions, the recent Kubernetes Events of the object and of the sources it reconciles from, the objects a Kustomization or HelmRelease manages and their health (from its inventory, with links to the Flux objects among them), a Kustomization's diff between its source and the cluster, a browser for the files of a source's artifact, a HelmRelease's release history, and, on demand, the object's YAML and what its Flux controller recently logged about it.
 
 It requires **Flux 2.6+**, the first release where all of these are GA. If the cluster doesn't serve a kind, its section shows "not installed". Kinds are detected at startup, so restart the UI after installing new Flux CRDs.
 
@@ -48,6 +48,7 @@ Flags:
 | `--subject-prefix` | `fluxcd-ui:` | Prefix added to user and group names before checking RBAC |
 | `--flux-namespace` | `flux-system` | Namespace of the Flux controllers |
 | `--artifact-browser` | `true` | Offer to browse the files of a source's artifact. Anyone who can reach the UI can then read them |
+| `--yaml-view` | `true` | Offer each object as YAML in its drawer, status included. Anyone who can reach the UI can then read the Flux objects, including a HelmRelease's inline `spec.values` and a Kustomization's `postBuild.substitute`: keep credentials in Secrets, with `valuesFrom` and `substituteFrom`, as Flux recommends |
 | `--diff` | `true` | Offer to diff a Kustomization's source with the cluster. Requires reaching source-controller's artifacts (in the cluster) or the API server's service proxy (outside it), and read access to the managed objects |
 | `--managed-objects-status` | `true` | Show the health of the objects a Kustomization or HelmRelease manages. Requires read access to them |
 | `--controller-logs` | `true` | Offer the controllers' logs about an object in its drawer. Requires `list pods` and `get pods/log` in `--flux-namespace` |

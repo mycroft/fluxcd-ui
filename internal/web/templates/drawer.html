@@ -79,6 +79,21 @@
       </div>
     </section>
     {{- end}}
+    {{- if and .YAML (not .Missing)}}
+    <section class="px-6 pb-6">
+      <div class="mb-3 flex items-center gap-3">
+        <h3 class="text-xs font-semibold tracking-wide text-slate-500 uppercase">YAML</h3>
+        <button type="button" hx-get="/objects/{{.Kind.ID}}/{{.Namespace}}/{{.Name}}/yaml" hx-target="#drawer-yaml" hx-swap="innerHTML" hx-disabled-elt="this"
+                class="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-xs hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
+          <svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 in-[.htmx-request]:animate-pulse" aria-hidden="true"><path fill-rule="evenodd" d="M6.28 5.22a.75.75 0 0 1 0 1.06L2.56 10l3.72 3.72a.75.75 0 0 1-1.06 1.06L.97 10.53a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 0Zm7.44 0a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L17.44 10l-3.72-3.72a.75.75 0 0 1 0-1.06ZM11.38 2.01a.75.75 0 0 1 .61.87l-2.5 14.5a.75.75 0 1 1-1.48-.26l2.5-14.5a.75.75 0 0 1 .87-.61Z" clip-rule="evenodd"/></svg>
+          Load latest
+        </button>
+      </div>
+      <div id="drawer-yaml">
+        <p class="text-sm text-slate-500">Show this {{.Kind.GVK.Kind}} as stored in the cluster, status included.</p>
+      </div>
+    </section>
+    {{- end}}
   </aside>
 </div>
 {{- end}}
@@ -509,5 +524,13 @@
     <pre class="max-h-[32rem] overflow-auto bg-slate-50 p-3 font-mono text-xs leading-5 text-slate-700 dark:bg-slate-950 dark:text-slate-300">{{.Manifest}}</pre>
   </details>
 </div>
+{{- end}}
+{{- end}}
+
+{{define "yaml" -}}
+{{- if .Err}}
+<p class="text-sm break-words text-red-600 dark:text-red-400">{{.Err}}</p>
+{{- else}}
+<pre class="max-h-[32rem] overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 font-mono text-xs leading-5 text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">{{.YAML}}</pre>
 {{- end}}
 {{- end}}

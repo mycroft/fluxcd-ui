@@ -738,6 +738,42 @@ func TestKustomizationRowsShowSourceState(t *testing.T) {
 	assertContains(t, body, `title="">—</td>`)
 }
 
+func TestYAMLView(t *testing.T) {
+	odd := &kustomizev1.Kustomization{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "odd"},
+		Spec:       kustomizev1.KustomizationSpec{Path: "./<script>alert(1)</script>"},
+	}
+	srv, _, _ := newTestServerWith(t, false, Options{YAMLView: true}, odd)
+
+	_, body := get(t, srv, "/objects/gitrepositories/flux-system/flux-system")
+	assertContains(t, body, `hx-get="/objects/gitrepositories/flux-system/flux-system/yaml"`)
+
+	res, body := get(t, srv, "/objects/gitrepositories/flux-system/flux-system/yaml")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", res.StatusCode)
+	}
+	assertContains(t, body, "<pre", "kind: GitRepository", "url: ssh://git@example.com/fleet.git")
+
+	_, body = get(t, srv, "/objects/kustomizations/apps/odd/yaml")
+	assertContains(t, body, "&lt;script&gt;alert(1)&lt;/script&gt;")
+	assertNotContains(t, body, "<script>alert")
+
+	res, body = get(t, srv, "/objects/gitrepositories/flux-system/gone/yaml")
+	if res.StatusCode != http.StatusNotFound {
+		t.Errorf("missing object: status = %d", res.StatusCode)
+	}
+	assertContains(t, body, "not found")
+}
+
+func TestYAMLViewDisabled(t *testing.T) {
+	srv, _ := newTestServer(t, false)
+	_, body := get(t, srv, "/objects/gitrepositories/flux-system/flux-system")
+	assertNotContains(t, body, "/yaml\"")
+	if res, _ := get(t, srv, "/objects/gitrepositories/flux-system/flux-system/yaml"); res.StatusCode != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", res.StatusCode)
+	}
+}
+
 func TestByteSize(t *testing.T) {
 	for n, want := range map[int64]string{0: "0 B", 1023: "1023 B", 1024: "1.0 KiB", 2252: "2.2 KiB", 5714780: "5.5 MiB", 3 << 30: "3.0 GiB"} {
 		if got := byteSize(n); got != want {

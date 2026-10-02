@@ -53,6 +53,7 @@ type Backend interface {
 	ArtifactFiles(ctx context.Context, k flux.Kind, namespace, name string) (*meta.Artifact, []artifact.File, error)
 	ArtifactFile(ctx context.Context, k flux.Kind, namespace, name, path string) (*artifact.Content, error)
 	HelmReleaseContent(ctx context.Context, namespace, name string) (*store.ReleaseContent, error)
+	ObjectYAML(ctx context.Context, k flux.Kind, namespace, name string) (string, error)
 }
 
 // Options configures a Server.
@@ -81,6 +82,8 @@ type Options struct {
 	// ReleaseContent offers the values and manifest of a HelmRelease's
 	// current Helm release to users allowed to inspect it.
 	ReleaseContent bool
+	// YAMLView offers each object as YAML in its drawer.
+	YAMLView bool
 }
 
 // Server is the HTTP handler of the UI.
@@ -132,6 +135,7 @@ func New(backend Backend, broker *store.Broker, opts Options, log *slog.Logger) 
 	s.mux.HandleFunc("GET /objects/{kind}/{namespace}/{name}/artifact", s.handleArtifact)
 	s.mux.HandleFunc("GET /objects/{kind}/{namespace}/{name}/artifact/file", s.handleArtifactFile)
 	s.mux.HandleFunc("GET /objects/helmreleases/{namespace}/{name}/release", s.handleRelease)
+	s.mux.HandleFunc("GET /objects/{kind}/{namespace}/{name}/yaml", s.handleYAML)
 	s.mux.HandleFunc("POST /objects/{kind}/{namespace}/{name}/{action}", s.handleAction)
 	s.mux.HandleFunc("GET /events", s.handleEvents)
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
@@ -317,6 +321,7 @@ type drawer struct {
 	Diff      bool        // a source diff is offered
 	Browse    bool        // the source artifact browser is offered
 	Release   bool        // the Helm release content is offered
+	YAML      bool        // the object's YAML is offered
 	Can       permissions // what the current user may do on this object
 	OOB       bool        // render the header as an out-of-band swap
 }
@@ -335,7 +340,7 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d := drawer{Kind: k, Namespace: r.PathValue("namespace"), Name: r.PathValue("name"), Actions: s.opts.Actions, Logs: s.opts.Logs,
-		Diff: s.opts.Diff && k.ID == "kustomizations"}
+		Diff: s.opts.Diff && k.ID == "kustomizations", YAML: s.opts.YAMLView}
 	// ?part=body is the live refresh of an open drawer: its body, plus the
 	// header out of band.
 	tmpl := "drawer"
@@ -643,6 +648,31 @@ func (s *Server) handleArtifactFile(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusNotFound
 	}
 	s.render(w, status, "artifact-file", v)
+}
+
+type yamlView struct {
+	YAML string
+	Err  error
+}
+
+// handleYAML serves an object as YAML.
+func (s *Server) handleYAML(w http.ResponseWriter, r *http.Request) {
+	k, ok := flux.KindByID(r.PathValue("kind"))
+	if !ok || !s.opts.YAMLView {
+		http.NotFound(w, r)
+		return
+	}
+	namespace, name := r.PathValue("namespace"), r.PathValue("name")
+	var v yamlView
+	v.YAML, v.Err = s.backend.ObjectYAML(r.Context(), k, namespace, name)
+	status := http.StatusOK
+	switch {
+	case apierrors.IsNotFound(v.Err):
+		status = http.StatusNotFound
+	case v.Err != nil:
+		s.log.Warn("encoding object", "kind", k.ID, "namespace", namespace, "name", name, "err", v.Err)
+	}
+	s.render(w, status, "yaml", v)
 }
 
 // maxReleaseView caps the values and the manifest shown. Charts templating

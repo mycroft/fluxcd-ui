@@ -36,6 +36,12 @@ artifactBrowser:
   # Anyone who can reach the UI can then read the repositories' files.
   enabled: true
 
+yamlView:
+  # Offer each Flux object as YAML in its detail drawer. Anyone who can reach
+  # the UI can then read the objects, including a HelmRelease's inline values
+  # and a Kustomization's postBuild substitutions.
+  enabled: true
+
 diff:
   # Offer to diff a Kustomization's source with the cluster, in its detail
   # drawer: fluxcd-ui downloads the source artifact from source-controller,

@@ -41,6 +41,7 @@ spec:
             - {{ printf "--managed-objects-status=%t" .Values.managedObjects.status.enabled | quote }}
             - {{ printf "--diff=%t" .Values.diff.enabled | quote }}
             - {{ printf "--artifact-browser=%t" .Values.artifactBrowser.enabled | quote }}
+            - {{ printf "--yaml-view=%t" .Values.yamlView.enabled | quote }}
             - {{ printf "--helm-release-content=%t" .Values.helmRelease.content.enabled | quote }}
             {{- if .Values.actions.enabled }}
             - --enable-actions

@@ -25,6 +25,7 @@ import (
 	toolscache "k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 
 	"github.com/mycroft/fluxcd-ui/internal/artifact"
 	"github.com/mycroft/fluxcd-ui/internal/diff"
@@ -361,6 +362,23 @@ func discoverInstalled(cfg *rest.Config) (map[string]bool, error) {
 		installed[k.ID] = kinds[k.GVK.Kind]
 	}
 	return installed, nil
+}
+
+// ObjectYAML returns an object as YAML, as kubectl get -o yaml shows it,
+// without its managed fields.
+func (s *Store) ObjectYAML(ctx context.Context, k flux.Kind, namespace, name string) (string, error) {
+	obj := k.NewObject() // the reader fills in a copy: it can be modified
+	if err := s.reader.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, obj); err != nil {
+		return "", err
+	}
+	// Typed objects read from the cache lack their apiVersion and kind.
+	obj.GetObjectKind().SetGroupVersionKind(k.GVK)
+	obj.SetManagedFields(nil) // the cache strips them, a direct client does not
+	y, err := yaml.Marshal(obj)
+	if err != nil {
+		return "", fmt.Errorf("encoding %s %s/%s: %w", k.GVK.Kind, namespace, name, err)
+	}
+	return string(y), nil
 }
 
 // DiffKustomization compares what a Kustomization's source would apply with
