@@ -59,7 +59,16 @@
       hx-get="/objects/{{.Kind}}/{{.Namespace}}/{{.Name}}" hx-target="#drawer" hx-swap="innerHTML">
     <td class="px-4 py-2 whitespace-nowrap"><span class="text-slate-400 dark:text-slate-500">{{.Namespace}}/</span><span class="font-medium">{{.Name}}</span></td>
     {{- range .Cells}}
+    {{- if and .Source .Source.Checked}}
+    <td class="max-w-xs px-4 py-2 text-slate-600 dark:text-slate-300" title="{{.Source.Summary}}">
+      <div class="flex items-center gap-1.5"><span class="size-1.5 shrink-0 rounded-full {{dotClass .Source.State}}" aria-hidden="true"></span><span class="truncate">{{.Text}}</span></div>
+      {{- if not .Source.OK}}
+      <p class="mt-1 truncate text-xs {{or (messageClass .Source.State) "text-slate-500"}}">{{.Source.Label}}</p>
+      {{- end}}
+    </td>
+    {{- else}}
     <td class="max-w-xs truncate px-4 py-2 text-slate-600 dark:text-slate-300{{if .Mono}} font-mono text-xs leading-5{{end}}" title="{{.Text}}">{{or .Text "—"}}</td>
+    {{- end}}
     {{- end}}
     <td class="px-4 py-2 font-mono text-xs leading-5 whitespace-nowrap text-slate-600 dark:text-slate-300" title="{{.Revision}}">{{with .Revision}}{{shortRev .}}{{else}}—{{end}}</td>
     <td class="max-w-md px-4 py-2">

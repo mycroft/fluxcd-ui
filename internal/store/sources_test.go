@@ -1,0 +1,137 @@
+package store
+
+import (
+	"context"
+	"slices"
+	"testing"
+	"time"
+
+	kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
+	"github.com/fluxcd/pkg/apis/meta"
+	sourcev1 "github.com/fluxcd/source-controller/api/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/mycroft/fluxcd-ui/internal/flux"
+)
+
+func readyCondition(status metav1.ConditionStatus, msg string) []metav1.Condition {
+	return []metav1.Condition{{Type: meta.ReadyCondition, Status: status, Reason: "Test", Message: msg}}
+}
+
+func kustomization(name, sourceKind, sourceNamespace, sourceName string) *kustomizev1.Kustomization {
+	return &kustomizev1.Kustomization{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: name},
+		Spec: kustomizev1.KustomizationSpec{SourceRef: kustomizev1.CrossNamespaceSourceReference{
+			Kind: sourceKind, Namespace: sourceNamespace, Name: sourceName,
+		}},
+	}
+}
+
+func TestListResolvesSources(t *testing.T) {
+	scheme, err := flux.NewScheme()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+		&sourcev1.GitRepository{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "fleet"},
+			Status:     sourcev1.GitRepositoryStatus{Conditions: readyCondition(metav1.ConditionTrue, "stored artifact")},
+		},
+		&sourcev1.OCIRepository{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "sources", Name: "manifests"},
+			Status:     sourcev1.OCIRepositoryStatus{Conditions: readyCondition(metav1.ConditionFalse, "unauthorized")},
+		},
+		kustomization("ready", "GitRepository", "", "fleet"),
+		kustomization("failing", "OCIRepository", "sources", "manifests"),
+		kustomization("missing", "GitRepository", "", "gone"),
+		kustomization("not-watched", "Bucket", "", "fleet"),
+		kustomization("unknown-kind", "ExternalArtifact", "", "fleet"),
+	).Build()
+	// Buckets are not installed, so their state cannot be checked.
+	s := New(c, NewBroker(time.Millisecond), "gitrepositories", "ocirepositories", "kustomizations")
+
+	k, _ := flux.KindByID("kustomizations")
+	rows, err := s.List(context.Background(), k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]flux.SourceStatus{
+		"ready":        {Kind: "GitRepository", Namespace: "apps", Name: "fleet", Checked: true, Found: true, Status: flux.Status{State: flux.StateReady, Reason: "Test", Message: "stored artifact"}},
+		"failing":      {Kind: "OCIRepository", Namespace: "sources", Name: "manifests", Checked: true, Found: true, Status: flux.Status{State: flux.StateFailed, Reason: "Test", Message: "unauthorized"}},
+		"missing":      {Kind: "GitRepository", Namespace: "apps", Name: "gone", Checked: true},
+		"not-watched":  {Kind: "Bucket", Namespace: "apps", Name: "fleet"},
+		"unknown-kind": {Kind: "ExternalArtifact", Namespace: "apps", Name: "fleet"},
+	}
+	if len(rows) != len(want) {
+		t.Fatalf("%d rows, want %d", len(rows), len(want))
+	}
+	for _, r := range rows {
+		if got := r.Cells[0].Source; got == nil || *got != want[r.Name] {
+			t.Errorf("%s: source = %+v\nwant %+v", r.Name, got, want[r.Name])
+		}
+	}
+}
+
+// topics collects the topics published until the broker is quiet.
+func topics(t *testing.T, ch <-chan string) []string {
+	t.Helper()
+	var got []string
+	for {
+		select {
+		case topic := <-ch:
+			got = append(got, topic)
+		case <-time.After(50 * time.Millisecond):
+			slices.Sort(got)
+			return got
+		}
+	}
+}
+
+func TestSourceStateChangesRefreshDependents(t *testing.T) {
+	broker := NewBroker(time.Millisecond)
+	defer broker.Close()
+	s := New(fake.NewClientBuilder().Build(), broker)
+	ch, unsubscribe := broker.Subscribe()
+	defer unsubscribe()
+
+	git, _ := flux.KindByID("gitrepositories")
+	repo := func(rv string, status metav1.ConditionStatus, revision string) client.Object {
+		return &sourcev1.GitRepository{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "fleet", ResourceVersion: rv},
+			Status: sourcev1.GitRepositoryStatus{
+				Conditions: readyCondition(status, "msg"),
+				Artifact:   &meta.Artifact{Revision: revision},
+			},
+		}
+	}
+	h := s.eventHandler(git)
+
+	// A new revision, still Ready: only the GitRepositories refresh.
+	h.OnUpdate(repo("1", metav1.ConditionTrue, "main@sha1:a"), repo("2", metav1.ConditionTrue, "main@sha1:b"))
+	if got := topics(t, ch); !slices.Equal(got, []string{TopicChanged, "gitrepositories"}) {
+		t.Errorf("revision change published %q", got)
+	}
+	// Failing: Kustomizations show it next to their source.
+	h.OnUpdate(repo("2", metav1.ConditionTrue, "main@sha1:b"), repo("3", metav1.ConditionFalse, "main@sha1:b"))
+	if got := topics(t, ch); !slices.Equal(got, []string{TopicChanged, "gitrepositories", "kustomizations"}) {
+		t.Errorf("state change published %q", got)
+	}
+	h.OnDelete(repo("3", metav1.ConditionFalse, "main@sha1:b"))
+	if got := topics(t, ch); !slices.Contains(got, "kustomizations") {
+		t.Errorf("deletion published %q", got)
+	}
+
+	// Kinds no row shows as a source refresh only themselves.
+	ks, _ := flux.KindByID("kustomizations")
+	s.eventHandler(ks).OnUpdate(kustomization("a", "GitRepository", "", "fleet"), func() client.Object {
+		o := kustomization("a", "GitRepository", "", "fleet")
+		o.ResourceVersion = "2"
+		o.Status.Conditions = readyCondition(metav1.ConditionFalse, "failed")
+		return o
+	}())
+	if got := topics(t, ch); !slices.Equal(got, []string{TopicChanged, "kustomizations"}) {
+		t.Errorf("kustomization change published %q", got)
+	}
+}

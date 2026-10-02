@@ -717,6 +717,27 @@ func TestTruncate(t *testing.T) {
 	}
 }
 
+func TestKustomizationRowsShowSourceState(t *testing.T) {
+	ks := func(name, source string) *kustomizev1.Kustomization {
+		return &kustomizev1.Kustomization{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: name},
+			Spec: kustomizev1.KustomizationSpec{SourceRef: kustomizev1.CrossNamespaceSourceReference{
+				Kind: "GitRepository", Namespace: "flux-system", Name: source,
+			}},
+		}
+	}
+	srv, _, _ := newTestServerWith(t, false, Options{}, ks("web", "flux-system"), ks("broken", "gone"))
+	_, body := get(t, srv, "/fragments/rows/kustomizations")
+
+	// A ready source: a green dot, its message on hover, no label.
+	assertContains(t, body, `title="GitRepository flux-system/flux-system: Ready. all good"`, "bg-emerald-500")
+	assertNotContains(t, body, "Source ready")
+	// A missing one is called out.
+	assertContains(t, body, `title="GitRepository flux-system/gone not found"`, "Source not found")
+	// Without a source reference, the cell stays plain.
+	assertContains(t, body, `title="">—</td>`)
+}
+
 func TestByteSize(t *testing.T) {
 	for n, want := range map[int64]string{0: "0 B", 1023: "1023 B", 1024: "1.0 KiB", 2252: "2.2 KiB", 5714780: "5.5 MiB", 3 << 30: "3.0 GiB"} {
 		if got := byteSize(n); got != want {

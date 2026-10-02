@@ -217,6 +217,9 @@ func describeKustomization(o *kustomizev1.Kustomization) Detail {
 		path = "./"
 	}
 	d.Cells = []Cell{{Text: source}, {Text: path, Mono: true}}
+	if ref := o.Spec.SourceRef; ref.Name != "" {
+		d.Cells[0].Source = &SourceStatus{Kind: ref.Kind, Namespace: cmp.Or(ref.Namespace, o.Namespace), Name: ref.Name}
+	}
 	d.Revision = o.Status.LastAppliedRevision
 	d.HasSource = true
 

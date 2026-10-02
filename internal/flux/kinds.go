@@ -19,6 +19,9 @@ import (
 type Cell struct {
 	Text string
 	Mono bool
+	// Source, on a cell naming the source the object reconciles from, holds
+	// that source's state.
+	Source *SourceStatus
 }
 
 // Field is a labeled value shown in the detail drawer.
@@ -101,6 +104,9 @@ type Kind struct {
 	// Controller is the Flux controller reconciling this kind, as named by
 	// its Deployment and its pods' "app" label.
 	Controller string
+	// UsedBy lists the kinds whose rows show the state of objects of this
+	// kind, as their source.
+	UsedBy []string
 
 	newObject func() client.Object
 	newList   func() client.ObjectList
@@ -112,6 +118,7 @@ var Kinds = []Kind{
 	{
 		ID:         "gitrepositories",
 		Controller: "source-controller",
+		UsedBy:     []string{"kustomizations"},
 		Title:      "GitRepositories",
 		GVK:        sourcev1.GroupVersion.WithKind(sourcev1.GitRepositoryKind),
 		Columns:    []string{"URL", "Ref"},
@@ -122,6 +129,7 @@ var Kinds = []Kind{
 	{
 		ID:         "ocirepositories",
 		Controller: "source-controller",
+		UsedBy:     []string{"kustomizations"},
 		Title:      "OCIRepositories",
 		GVK:        sourcev1.GroupVersion.WithKind(sourcev1.OCIRepositoryKind),
 		Columns:    []string{"URL", "Ref"},
@@ -132,6 +140,7 @@ var Kinds = []Kind{
 	{
 		ID:         "buckets",
 		Controller: "source-controller",
+		UsedBy:     []string{"kustomizations"},
 		Title:      "Buckets",
 		GVK:        sourcev1.GroupVersion.WithKind(sourcev1.BucketKind),
 		Columns:    []string{"Endpoint", "Bucket", "Provider"},

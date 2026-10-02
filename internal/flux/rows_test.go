@@ -222,6 +222,49 @@ func TestKustomizationRow(t *testing.T) {
 	if d.Status.State != StateSuspended || d.Revision != "main@sha1:abc" {
 		t.Errorf("status = %s, revision = %q", d.Status.State, d.Revision)
 	}
+	// The source cell names the source to resolve, in the Kustomization's
+	// namespace unless the reference says otherwise.
+	if src := d.Cells[0].Source; src == nil || *src != (SourceStatus{Kind: "GitRepository", Namespace: "flux-system", Name: "flux-system"}) {
+		t.Errorf("source = %+v", src)
+	}
+	if d.Cells[1].Source != nil {
+		t.Errorf("path cell has a source: %+v", d.Cells[1].Source)
+	}
+	o.Spec.SourceRef = kustomizev1.CrossNamespaceSourceReference{Kind: "OCIRepository", Name: "fleet", Namespace: "sources"}
+	if src := kind(t, "kustomizations").Describe(o).Cells[0].Source; src == nil || src.Kind != "OCIRepository" || src.Namespace != "sources" {
+		t.Errorf("cross-namespace source = %+v", src)
+	}
+}
+
+func TestSourceStatus(t *testing.T) {
+	tests := []struct {
+		src     SourceStatus
+		state   State
+		ok      bool
+		label   string
+		summary string
+	}{
+		{SourceStatus{Found: true, Status: Status{State: StateReady, Message: "stored artifact"}}, StateReady, true, "Source ready", "GitRepository flux-system/fleet: Ready. stored artifact"},
+		{SourceStatus{Found: true, Status: Status{State: StateFailed, Message: "auth failed"}}, StateFailed, false, "Source failed", "GitRepository flux-system/fleet: Failed. auth failed"},
+		{SourceStatus{Found: true, Status: Status{State: StateSuspended}}, StateSuspended, false, "Source suspended", "GitRepository flux-system/fleet: Suspended"},
+		{SourceStatus{}, StateFailed, false, "Source not found", "GitRepository flux-system/fleet not found"},
+	}
+	for _, tt := range tests {
+		src := tt.src
+		src.Kind, src.Namespace, src.Name = "GitRepository", "flux-system", "fleet"
+		if src.State() != tt.state || src.OK() != tt.ok || src.Label() != tt.label || src.Summary() != tt.summary {
+			t.Errorf("%+v: state %s, ok %t, label %q, summary %q", tt.src, src.State(), src.OK(), src.Label(), src.Summary())
+		}
+	}
+}
+
+func TestKindByGroupKind(t *testing.T) {
+	if k, ok := KindByGroupKind("source.toolkit.fluxcd.io", "Bucket"); !ok || k.ID != "buckets" {
+		t.Errorf("Bucket = %q, %t", k.ID, ok)
+	}
+	if _, ok := KindByGroupKind("source.toolkit.fluxcd.io", "ExternalArtifact"); ok {
+		t.Error("ExternalArtifact is not shown, yet found")
+	}
 }
 
 func TestRowsFromList(t *testing.T) {

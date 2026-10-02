@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/fluxcd/pkg/apis/meta"
+	sourcev1 "github.com/fluxcd/source-controller/api/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
@@ -156,10 +157,10 @@ func (s *Store) Start(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("getting informer for %s: %w", k.ID, err)
 		}
-		if _, err := inf.AddEventHandler(s.eventHandler(k.ID)); err != nil {
+		if _, err := inf.AddEventHandler(s.eventHandler(k)); err != nil {
 			return fmt.Errorf("adding event handler for %s: %w", k.ID, err)
 		}
-		go s.waitForSync(ctx, k.ID, inf)
+		go s.waitForSync(ctx, k, inf)
 	}
 	s.events.start(ctx)
 	return s.cache.Start(ctx)
@@ -188,21 +189,70 @@ func (s *Store) Ready() bool {
 	return true
 }
 
-// List returns the rows of all objects of kind k, sorted by namespace and name.
+// List returns the rows of all objects of kind k, sorted by namespace and name,
+// with the state of the sources they name.
 func (s *Store) List(ctx context.Context, k flux.Kind) ([]flux.Row, error) {
+	rows, err := s.rows(ctx, k)
+	if err != nil {
+		return nil, err
+	}
+	s.resolveSources(ctx, rows)
+	slices.SortFunc(rows, func(a, b flux.Row) int {
+		return cmp.Or(cmp.Compare(a.Namespace, b.Namespace), cmp.Compare(a.Name, b.Name))
+	})
+	return rows, nil
+}
+
+func (s *Store) rows(ctx context.Context, k flux.Kind) ([]flux.Row, error) {
 	list := k.NewList()
 	// Objects are only read, never mutated, so skip the cache's deep copy.
 	if err := s.reader.List(ctx, list, client.UnsafeDisableDeepCopy); err != nil {
 		return nil, err
 	}
-	rows, err := k.Rows(list)
-	if err != nil {
-		return nil, err
+	return k.Rows(list)
+}
+
+// resolveSources fills in the state of the sources that rows name. Sources of
+// a kind that is not watched, or not synced yet, are left unchecked.
+func (s *Store) resolveSources(ctx context.Context, rows []flux.Row) {
+	byKind := map[string]map[client.ObjectKey]flux.Status{}
+	for _, row := range rows {
+		for _, cell := range row.Cells {
+			src := cell.Source
+			if src == nil {
+				continue
+			}
+			statuses, listed := byKind[src.Kind]
+			if !listed {
+				statuses = s.sourceStatuses(ctx, src.Kind)
+				byKind[src.Kind] = statuses
+			}
+			if statuses == nil {
+				continue
+			}
+			src.Checked = true
+			src.Status, src.Found = statuses[client.ObjectKey{Namespace: src.Namespace, Name: src.Name}]
+		}
 	}
-	slices.SortFunc(rows, func(a, b flux.Row) int {
-		return cmp.Or(cmp.Compare(a.Namespace, b.Namespace), cmp.Compare(a.Name, b.Name))
-	})
-	return rows, nil
+}
+
+// sourceStatuses returns the status of every object of a source kind, or nil
+// when that kind is not watched or not synced yet.
+func (s *Store) sourceStatuses(ctx context.Context, kind string) map[client.ObjectKey]flux.Status {
+	k, ok := flux.KindByGroupKind(sourcev1.GroupVersion.Group, kind)
+	if !ok || !s.State(k.ID).Synced {
+		return nil
+	}
+	rows, err := s.rows(ctx, k)
+	if err != nil {
+		s.log.Debug("listing sources", "kind", k.ID, "err", err)
+		return nil
+	}
+	statuses := make(map[client.ObjectKey]flux.Status, len(rows))
+	for _, r := range rows {
+		statuses[client.ObjectKey{Namespace: r.Namespace, Name: r.Name}] = r.Status
+	}
+	return statuses
 }
 
 // Get returns the detail of one object. A missing object yields an error
@@ -215,36 +265,46 @@ func (s *Store) Get(ctx context.Context, k flux.Kind, namespace, name string) (f
 	return k.Describe(obj), nil
 }
 
-func (s *Store) eventHandler(id string) toolscache.ResourceEventHandler {
-	notify := func() { s.broker.Notify(id, TopicChanged) }
+func (s *Store) eventHandler(k flux.Kind) toolscache.ResourceEventHandler {
+	notify := func(stateChanged bool) {
+		s.broker.Notify(k.ID, TopicChanged)
+		if stateChanged { // rows naming the object as their source show its state
+			s.broker.Notify(k.UsedBy...)
+		}
+	}
 	return toolscache.ResourceEventHandlerDetailedFuncs{
 		AddFunc: func(_ any, isInInitialList bool) {
 			if !isInInitialList { // the initial list is announced once synced
-				notify()
+				notify(true)
 			}
 		},
 		UpdateFunc: func(oldObj, newObj any) {
 			o, ok1 := oldObj.(client.Object)
 			n, ok2 := newObj.(client.Object)
-			if ok1 && ok2 && o.GetResourceVersion() == n.GetResourceVersion() {
+			if !ok1 || !ok2 {
+				notify(true)
+				return
+			}
+			if o.GetResourceVersion() == n.GetResourceVersion() {
 				return // periodic resync, nothing changed
 			}
-			notify()
+			notify(len(k.UsedBy) > 0 && k.Describe(o).Status != k.Describe(n).Status)
 		},
-		DeleteFunc: func(any) { notify() },
+		DeleteFunc: func(any) { notify(true) },
 	}
 }
 
-func (s *Store) waitForSync(ctx context.Context, id string, inf cache.Informer) {
+func (s *Store) waitForSync(ctx context.Context, k flux.Kind, inf cache.Informer) {
 	if !toolscache.WaitForCacheSync(ctx.Done(), inf.HasSynced) {
 		return
 	}
 	s.mu.Lock()
-	s.states[id].Synced = true
-	s.states[id].Err = nil
+	s.states[k.ID].Synced = true
+	s.states[k.ID].Err = nil
 	s.mu.Unlock()
-	s.log.Info("cache synced", "kind", id)
-	s.broker.Notify(id, TopicChanged)
+	s.log.Info("cache synced", "kind", k.ID)
+	s.broker.Notify(k.ID, TopicChanged)
+	s.broker.Notify(k.UsedBy...) // their rows can now show these sources' state
 }
 
 // onWatchError records list/watch failures (typically missing RBAC) against
