@@ -1,6 +1,7 @@
 package flux
 
 import (
+	"cmp"
 	"testing"
 	"time"
 
@@ -190,6 +191,15 @@ func TestHelmReleaseRow(t *testing.T) {
 		if o.Status.History[0].Version != 60 {
 			t.Error("describing reordered the release history")
 		}
+		// Its source state is the generated HelmChart's, in the source's namespace.
+		if src := d.Cells[1].Source; src == nil || *src != (SourceStatus{Kind: "HelmChart", Namespace: "flux-system", Name: "alloy-alloy"}) {
+			t.Errorf("source = %+v", src)
+		}
+		// As recorded by helm-controller, when it has.
+		o.Status.HelmChart = "charts/alloy-alloy"
+		if src := k.Describe(o).Cells[1].Source; src == nil || src.Namespace != "charts" || src.Name != "alloy-alloy" {
+			t.Errorf("recorded HelmChart = %+v", src)
+		}
 	})
 
 	t.Run("chart ref, never deployed", func(t *testing.T) {
@@ -202,6 +212,9 @@ func TestHelmReleaseRow(t *testing.T) {
 		}
 		d := k.Describe(o)
 		assertCells(t, d.Row, "podinfo", "OCIRepository/podinfo", "")
+		if src := d.Cells[1].Source; src == nil || *src != (SourceStatus{Kind: "OCIRepository", Namespace: "apps", Name: "podinfo"}) {
+			t.Errorf("source = %+v", src)
+		}
 		if d.Revision != "6.5.0" {
 			t.Errorf("revision = %q, want last attempted revision", d.Revision)
 		}
@@ -248,10 +261,11 @@ func TestSourceStatus(t *testing.T) {
 		{SourceStatus{Found: true, Status: Status{State: StateFailed, Message: "auth failed"}}, StateFailed, false, "Source failed", "GitRepository flux-system/fleet: Failed. auth failed"},
 		{SourceStatus{Found: true, Status: Status{State: StateSuspended}}, StateSuspended, false, "Source suspended", "GitRepository flux-system/fleet: Suspended"},
 		{SourceStatus{}, StateFailed, false, "Source not found", "GitRepository flux-system/fleet not found"},
+		{SourceStatus{Kind: "HelmChart", Found: true, Status: Status{State: StateFailed, Message: "no chart version found"}}, StateFailed, false, "Chart failed", "HelmChart flux-system/fleet: Failed. no chart version found"},
 	}
 	for _, tt := range tests {
 		src := tt.src
-		src.Kind, src.Namespace, src.Name = "GitRepository", "flux-system", "fleet"
+		src.Kind, src.Namespace, src.Name = cmp.Or(src.Kind, "GitRepository"), "flux-system", "fleet"
 		if src.State() != tt.state || src.OK() != tt.ok || src.Label() != tt.label || src.Summary() != tt.summary {
 			t.Errorf("%+v: state %s, ok %t, label %q, summary %q", tt.src, src.State(), src.OK(), src.Label(), src.Summary())
 		}

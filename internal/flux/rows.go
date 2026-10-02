@@ -133,15 +133,25 @@ func describeHelmRelease(o *helmv2.HelmRelease) Detail {
 	d := newDetail(o, o.Spec.Suspend, o.Status.ObservedGeneration, o.Status.Conditions, o.Status.LastHandledReconcileAt)
 
 	var chart, version, source string
+	var sourceState *SourceStatus
 	switch {
 	case o.Spec.ChartRef != nil:
 		r := o.Spec.ChartRef
 		chart = r.Name
 		source = sourceRef(r.Kind, r.Name, r.Namespace, o.Namespace)
+		sourceState = &SourceStatus{Kind: r.Kind, Namespace: cmp.Or(r.Namespace, o.Namespace), Name: r.Name}
 	case o.Spec.Chart != nil:
 		s := o.Spec.Chart.Spec
 		chart, version = s.Chart, s.Version
 		source = sourceRef(s.SourceRef.Kind, s.SourceRef.Name, s.SourceRef.Namespace, o.Namespace)
+		// The release is installed from the HelmChart helm-controller
+		// generates from the template, in its source's namespace: its state
+		// covers fetching the chart from that source.
+		namespace, name := o.Spec.Chart.GetNamespace(o.Namespace), o.GetHelmChartName()
+		if ns, n, ok := strings.Cut(o.Status.HelmChart, "/"); ok {
+			namespace, name = ns, n
+		}
+		sourceState = &SourceStatus{Kind: sourcev1.HelmChartKind, Namespace: namespace, Name: name}
 	}
 
 	latest := LatestSnapshot(o.Status.History)
@@ -154,7 +164,7 @@ func describeHelmRelease(o *helmv2.HelmRelease) Detail {
 		d.Revision = latest.ChartVersion
 		appVersion = latest.AppVersion
 	}
-	d.Cells = []Cell{{Text: chart}, {Text: source}, {Text: appVersion, Mono: true}}
+	d.Cells = []Cell{{Text: chart}, {Text: source, Source: sourceState}, {Text: appVersion, Mono: true}}
 	d.HasSource = source != ""
 
 	var f fields

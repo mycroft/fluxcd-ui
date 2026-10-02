@@ -738,6 +738,27 @@ func TestKustomizationRowsShowSourceState(t *testing.T) {
 	assertContains(t, body, `title="">—</td>`)
 }
 
+func TestHelmReleaseRowsShowChartState(t *testing.T) {
+	chart := &sourcev1.HelmChart{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "flux-system", Name: "apps-alloy"},
+		Status:     sourcev1.HelmChartStatus{Conditions: failed("no 'alloy' chart with version matching '9.x'")},
+	}
+	alloy := &helmv2.HelmRelease{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "alloy"},
+		Spec: helmv2.HelmReleaseSpec{Chart: &helmv2.HelmChartTemplate{Spec: helmv2.HelmChartTemplateSpec{
+			Chart: "alloy", Version: "9.x", SourceRef: helmv2.CrossNamespaceObjectReference{Kind: "HelmRepository", Namespace: "flux-system", Name: "grafana"},
+		}}},
+	}
+	srv, _, _ := newTestServerWith(t, false, Options{}, chart, alloy)
+	_, body := get(t, srv, "/fragments/rows/helmreleases")
+
+	// The cell names the HelmRepository; the state is the generated HelmChart's.
+	assertContains(t, body, "HelmRepository/flux-system/grafana", "Chart failed",
+		`title="HelmChart flux-system/apps-alloy: Failed. no &#39;alloy&#39; chart with version matching &#39;9.x&#39;"`)
+	// OCIRepositories are not installed here: apps/podinfo's chartRef stays plain.
+	assertContains(t, body, `title="OCIRepository/podinfo">OCIRepository/podinfo</td>`)
+}
+
 func TestYAMLView(t *testing.T) {
 	odd := &kustomizev1.Kustomization{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "odd"},

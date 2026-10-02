@@ -129,7 +129,7 @@ var Kinds = []Kind{
 	{
 		ID:         "ocirepositories",
 		Controller: "source-controller",
-		UsedBy:     []string{"kustomizations"},
+		UsedBy:     []string{"kustomizations", "helmreleases"},
 		Title:      "OCIRepositories",
 		GVK:        sourcev1.GroupVersion.WithKind(sourcev1.OCIRepositoryKind),
 		Columns:    []string{"URL", "Ref"},
@@ -161,6 +161,7 @@ var Kinds = []Kind{
 	{
 		ID:         "helmcharts",
 		Controller: "source-controller",
+		UsedBy:     []string{"helmreleases"},
 		Title:      "HelmCharts",
 		GVK:        sourcev1.GroupVersion.WithKind(sourcev1.HelmChartKind),
 		Columns:    []string{"Chart", "Version", "Source"},

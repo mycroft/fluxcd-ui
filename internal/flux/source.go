@@ -1,5 +1,7 @@
 package flux
 
+import sourcev1 "github.com/fluxcd/source-controller/api/v1"
+
 // SourceStatus is the state of the source an object reconciles from, shown
 // next to its reference. Describe functions set the reference; the store
 // resolves it.
@@ -29,23 +31,28 @@ func (s *SourceStatus) OK() bool {
 	return st == StateReady || st == StateStatic
 }
 
-// Label names the source's state in a few words, e.g. "Source failed".
+// Label names the source's state in a few words, e.g. "Source failed", or
+// "Chart failed" for a HelmChart.
 func (s *SourceStatus) Label() string {
+	noun := "Source"
+	if s.Kind == sourcev1.HelmChartKind {
+		noun = "Chart"
+	}
 	switch {
 	case !s.Found:
-		return "Source not found"
+		return noun + " not found"
 	case s.Status.State == StateReady:
-		return "Source ready"
+		return noun + " ready"
 	case s.Status.State == StateFailed:
-		return "Source failed"
+		return noun + " failed"
 	case s.Status.State == StateProgressing:
-		return "Source progressing"
+		return noun + " progressing"
 	case s.Status.State == StateSuspended:
-		return "Source suspended"
+		return noun + " suspended"
 	case s.Status.State == StateStatic:
-		return "Source static"
+		return noun + " static"
 	default:
-		return "Source state unknown"
+		return noun + " state unknown"
 	}
 }
 
