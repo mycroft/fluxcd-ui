@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	helmv2 "github.com/fluxcd/helm-controller/api/v2"
@@ -63,6 +64,46 @@ func TestDrawerButtonsFollowPermissions(t *testing.T) {
 	// No identity at all: read-only.
 	body = getAs(t, srv, "/objects/helmreleases/apps/podinfo", nil)
 	assertContains(t, body, "You are not allowed to act on this object.")
+}
+
+func TestReleaseContentFollowsPermissions(t *testing.T) {
+	opts := Options{UserHeader: "X-Forwarded-User", GroupsHeader: "X-Forwarded-Groups", ReleaseContent: true,
+		Authorizer: fakeAuthorizer{"team-a inspect HelmRelease apps": true}}
+	srv, _, _ := newTestServerWith(t, false, opts)
+	bob := map[string]string{"X-Forwarded-User": "bob", "X-Forwarded-Groups": "devs"}
+	release := func(headers map[string]string) (int, string) {
+		req := httptest.NewRequest(http.MethodGet, "/objects/helmreleases/apps/podinfo/release", nil)
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		body, _ := io.ReadAll(rec.Result().Body)
+		return rec.Code, string(body)
+	}
+
+	// Inspecting needs no actions, only the verb.
+	body := getAs(t, srv, "/objects/helmreleases/apps/podinfo", alice)
+	assertContains(t, body, `hx-get="/objects/helmreleases/apps/podinfo/release"`)
+	if code, body := release(alice); code != http.StatusOK || !strings.Contains(body, "replicaCount: 2") {
+		t.Errorf("alice: %d %s", code, body)
+	}
+
+	body = getAs(t, srv, "/objects/helmreleases/apps/podinfo", bob)
+	assertContains(t, body, "You are not allowed to inspect this release.")
+	assertNotContains(t, body, "/release\"")
+	code, body := release(bob)
+	if code != http.StatusForbidden {
+		t.Errorf("bob: status = %d", code)
+	}
+	assertContains(t, body, `bob is not allowed to inspect HelmRelease apps/podinfo`)
+	assertNotContains(t, body, "replicaCount")
+
+	code, body = release(nil)
+	if code != http.StatusUnauthorized {
+		t.Errorf("anonymous: status = %d", code)
+	}
+	assertContains(t, body, "not authenticated: the X-Forwarded-User header is missing")
 }
 
 func TestActionsFollowPermissions(t *testing.T) {

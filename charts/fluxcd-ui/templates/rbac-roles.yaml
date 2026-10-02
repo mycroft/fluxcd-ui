@@ -1,8 +1,11 @@
 {{- if and .Values.rbac.create .Values.authorization.createRoles -}}
 # Roles for authorization.mode=rbac. Their verbs mean nothing to the API
-# server: they only let fluxcd-ui act on the user's behalf. Bind them to
+# server: they only let fluxcd-ui act on the user's behalf, or show them a
+# Helm release's values and manifest ("inspect"). Bind them to
 # prefixed groups, e.g. a RoleBinding in namespace "apps" to group
 # "{{ .Values.authorization.subjectPrefix }}team-a".
+# Inspecting reveals the credentials release values often hold, so it has a
+# role of its own rather than coming with the operator role.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -24,4 +27,15 @@ rules:
   - apiGroups: ["source.toolkit.fluxcd.io", "helm.toolkit.fluxcd.io", "kustomize.toolkit.fluxcd.io"]
     resources: ["*"]
     verbs: ["reconcile"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "fluxcd-ui.fullname" . }}-inspector
+  labels:
+    {{- include "fluxcd-ui.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["helm.toolkit.fluxcd.io"]
+    resources: ["helmreleases"]
+    verbs: ["inspect"]
 {{- end }}

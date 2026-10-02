@@ -48,6 +48,16 @@ diff:
     # the diff and the artifact browser).
     create: true
 
+helmRelease:
+  content:
+    # Offer the values and rendered manifest of a HelmRelease's current Helm
+    # release in its detail drawer. Helm stores releases in Secrets, so this
+    # grants reading Secrets in every namespace, and release values often
+    # hold credentials. With authorization.mode=rbac, only users granted the
+    # "inspect" verb on the HelmRelease can view them; with mode none, anyone
+    # who can reach the UI can.
+    enabled: false
+
 managedObjects:
   status:
     # Show the health of the objects a Kustomization or HelmRelease manages,
@@ -81,17 +91,20 @@ auth:
   groupsSeparator: ","
 
 authorization:
-  # Who may act when actions are enabled:
+  # Who may act when actions are enabled, and inspect Helm releases when
+  # helmRelease.content is enabled:
   #   none: every user who reaches the UI.
-  #   rbac: users granted the "reconcile" / "suspend" verbs by Kubernetes RBAC,
-  #         checked with SubjectAccessReviews. Requires auth.userHeader.
+  #   rbac: users granted the "reconcile" / "suspend" / "inspect" verbs by
+  #         Kubernetes RBAC, checked with SubjectAccessReviews. Requires
+  #         auth.userHeader.
   mode: none
   # Prepended to user and group names before checking RBAC, so that a header
   # can never name a built-in identity such as system:masters. Bind roles to
   # e.g. "fluxcd-ui:team-a". Must not be empty or start with "system:".
   subjectPrefix: "fluxcd-ui:"
-  # Create the <fullname>-operator (reconcile, suspend) and
-  # <fullname>-reconciler (reconcile) ClusterRoles, ready to bind to groups.
+  # Create the <fullname>-operator (reconcile, suspend),
+  # <fullname>-reconciler (reconcile) and <fullname>-inspector (inspect)
+  # ClusterRoles, ready to bind to groups.
   createRoles: true
 
 # debug, info, warn or error

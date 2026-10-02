@@ -17,7 +17,9 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
+	helmv2 "github.com/fluxcd/helm-controller/api/v2"
 	"github.com/fluxcd/pkg/apis/meta"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
@@ -50,6 +52,7 @@ type Backend interface {
 	DiffKustomization(ctx context.Context, namespace, name string) (*diff.Result, error)
 	ArtifactFiles(ctx context.Context, k flux.Kind, namespace, name string) (*meta.Artifact, []artifact.File, error)
 	ArtifactFile(ctx context.Context, k flux.Kind, namespace, name, path string) (*artifact.Content, error)
+	HelmReleaseContent(ctx context.Context, namespace, name string) (*store.ReleaseContent, error)
 }
 
 // Options configures a Server.
@@ -75,6 +78,9 @@ type Options struct {
 	Diff bool
 	// ArtifactBrowser offers to browse the files of a source's artifact.
 	ArtifactBrowser bool
+	// ReleaseContent offers the values and manifest of a HelmRelease's
+	// current Helm release to users allowed to inspect it.
+	ReleaseContent bool
 }
 
 // Server is the HTTP handler of the UI.
@@ -125,6 +131,7 @@ func New(backend Backend, broker *store.Broker, opts Options, log *slog.Logger) 
 	s.mux.HandleFunc("GET /objects/kustomizations/{namespace}/{name}/diff", s.handleDiff)
 	s.mux.HandleFunc("GET /objects/{kind}/{namespace}/{name}/artifact", s.handleArtifact)
 	s.mux.HandleFunc("GET /objects/{kind}/{namespace}/{name}/artifact/file", s.handleArtifactFile)
+	s.mux.HandleFunc("GET /objects/helmreleases/{namespace}/{name}/release", s.handleRelease)
 	s.mux.HandleFunc("POST /objects/{kind}/{namespace}/{name}/{action}", s.handleAction)
 	s.mux.HandleFunc("GET /events", s.handleEvents)
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
@@ -309,6 +316,7 @@ type drawer struct {
 	Logs      bool        // controller logs are offered
 	Diff      bool        // a source diff is offered
 	Browse    bool        // the source artifact browser is offered
+	Release   bool        // the Helm release content is offered
 	Can       permissions // what the current user may do on this object
 	OOB       bool        // render the header as an out-of-band swap
 }
@@ -317,6 +325,7 @@ type drawer struct {
 type permissions struct {
 	Reconcile bool
 	Suspend   bool
+	Inspect   bool // read the Helm release's values and manifest
 }
 
 func (s *Server) handleObject(w http.ResponseWriter, r *http.Request) {
@@ -355,8 +364,12 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request) {
 		if detail.HasInventory && !d.OOB {
 			d.Inventory = newInventoryView(objectPath(k, d.Namespace, d.Name), detail, s.opts.ManagedStatus, nil)
 		}
+		ref := store.ObjectRef{Kind: k.GVK.Kind, Namespace: d.Namespace, Name: d.Name}
 		if d.Actions {
-			d.Can = s.permissions(r, store.ObjectRef{Kind: k.GVK.Kind, Namespace: d.Namespace, Name: d.Name})
+			d.Can = s.permissions(r, ref)
+		}
+		if d.Release = s.opts.ReleaseContent && k.ID == "helmreleases"; d.Release && !d.OOB {
+			d.Can.Inspect = s.allowed(r, authz.VerbInspect, ref)
 		}
 		s.render(w, http.StatusOK, tmpl, d)
 	}
@@ -365,18 +378,21 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request) {
 // permissions asks the authorizer, with caching, what the request's user may
 // do on ref. It only decides which buttons to show: actions are re-checked.
 func (s *Server) permissions(r *http.Request, ref store.ObjectRef) permissions {
-	if s.opts.UserHeader != "" && s.user(r) == "" {
-		return permissions{}
-	}
+	return permissions{Reconcile: s.allowed(r, authz.VerbReconcile, ref), Suspend: s.allowed(r, authz.VerbSuspend, ref)}
+}
+
+// allowed asks the authorizer, with caching, whether the request's user may
+// apply verb to ref. A user header that is configured but missing denies.
+func (s *Server) allowed(r *http.Request, verb string, ref store.ObjectRef) bool {
 	id := s.identity(r)
-	can := func(verb string) bool {
-		ok, err := s.authz.Allowed(r.Context(), id, verb, ref, false)
-		if err != nil {
-			s.log.Warn("checking permissions", "verb", verb, "object", ref.String(), "user", id.User, "err", err)
-		}
-		return ok && err == nil
+	if s.opts.UserHeader != "" && id.User == "" {
+		return false
 	}
-	return permissions{Reconcile: can(authz.VerbReconcile), Suspend: can(authz.VerbSuspend)}
+	ok, err := s.authz.Allowed(r.Context(), id, verb, ref, false)
+	if err != nil {
+		s.log.Warn("checking permissions", "verb", verb, "object", ref.String(), "user", id.User, "err", err)
+	}
+	return ok && err == nil
 }
 
 type toast struct {
@@ -627,6 +643,71 @@ func (s *Server) handleArtifactFile(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusNotFound
 	}
 	s.render(w, status, "artifact-file", v)
+}
+
+// maxReleaseView caps the values and the manifest shown. Charts templating
+// their CRDs render manifests of a few MiB.
+const maxReleaseView = 4 << 20
+
+type releaseView struct {
+	Content           *store.ReleaseContent
+	Values            string
+	Manifest          string
+	ValuesTruncated   bool
+	ManifestTruncated bool
+	ManifestSize      int64 // before truncation
+	Err               error
+}
+
+// handleRelease serves the values and manifest of a HelmRelease's current
+// Helm release. Values may hold credentials, so every request is authorized.
+func (s *Server) handleRelease(w http.ResponseWriter, r *http.Request) {
+	if !s.opts.ReleaseContent {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store") // neither the browser nor a proxy may keep the values
+	ctx := r.Context()
+	id := s.identity(r)
+	ref := store.ObjectRef{Kind: helmv2.HelmReleaseKind, Namespace: r.PathValue("namespace"), Name: r.PathValue("name")}
+	log := s.log.With("namespace", ref.Namespace, "name", ref.Name, "user", id.User)
+	var v releaseView
+
+	if s.opts.UserHeader != "" && id.User == "" {
+		v.Err = errors.New("not authenticated: the " + s.opts.UserHeader + " header is missing")
+		s.render(w, http.StatusUnauthorized, "release", v)
+		return
+	}
+	if err := s.authorize(ctx, id, authz.VerbInspect, ref); err != nil {
+		log.Warn("reading Helm release refused", "err", err)
+		v.Err = err
+		s.render(w, actionErrorStatus(err), "release", v)
+		return
+	}
+	v.Content, v.Err = s.backend.HelmReleaseContent(ctx, ref.Namespace, ref.Name)
+	if v.Err != nil {
+		if !errors.Is(v.Err, store.ErrNoRelease) {
+			log.Warn("reading Helm release", "err", v.Err)
+		}
+		s.render(w, http.StatusOK, "release", v)
+		return
+	}
+	log.Info("Helm release read") // values may hold credentials: keep track of who read them
+	v.Values, v.ValuesTruncated = truncate(v.Content.Values, maxReleaseView)
+	v.Manifest, v.ManifestTruncated = truncate(v.Content.Manifest, maxReleaseView)
+	v.ManifestSize = int64(len(v.Content.Manifest))
+	s.render(w, http.StatusOK, "release", v)
+}
+
+// truncate cuts s to at most n bytes, on a UTF-8 boundary.
+func truncate(s string, n int) (string, bool) {
+	if len(s) <= n {
+		return s, false
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n], true
 }
 
 func objectPath(k flux.Kind, namespace, name string) string {

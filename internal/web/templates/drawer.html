@@ -40,6 +40,28 @@
       </div>
     </section>
     {{- end}}
+    {{- if and .Release (not .Missing)}}
+    <section class="px-6 pb-6">
+      <div class="mb-3 flex items-center gap-3">
+        <h3 class="text-xs font-semibold tracking-wide text-slate-500 uppercase">Values and manifest</h3>
+        {{- with .Detail.History}}{{with index . 0}}<span class="font-mono text-xs text-slate-400">revision {{.Revision}}</span>{{end}}{{end}}
+        {{- if .Can.Inspect}}
+        <button type="button" hx-get="/objects/{{.Kind.ID}}/{{.Namespace}}/{{.Name}}/release" hx-target="#drawer-release" hx-swap="innerHTML" hx-disabled-elt="this"
+                class="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-xs hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
+          <svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 in-[.htmx-request]:animate-spin" aria-hidden="true"><path fill-rule="evenodd" d="M4.5 2A1.5 1.5 0 0 0 3 3.5v13A1.5 1.5 0 0 0 4.5 18h11a1.5 1.5 0 0 0 1.5-1.5V7.62a1.5 1.5 0 0 0-.44-1.06l-4.12-4.12A1.5 1.5 0 0 0 11.38 2H4.5Zm2.25 8.5a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5Zm0 3a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5Z" clip-rule="evenodd"/></svg>
+          Load
+        </button>
+        {{- end}}
+      </div>
+      <div id="drawer-release">
+        {{- if .Can.Inspect}}
+        <p class="text-sm text-slate-500">Load the values Flux passed to Helm and the manifest Helm rendered, as stored in the current release.</p>
+        {{- else}}
+        <p class="text-sm text-slate-500">You are not allowed to inspect this release.</p>
+        {{- end}}
+      </div>
+    </section>
+    {{- end}}
     {{- if and (not .Missing) .Detail.HasInventory}}{{template "inventory" .Inventory}}{{end}}
     {{- if and .Logs (not .Missing)}}
     <section class="px-6 pb-6">
@@ -450,5 +472,42 @@
   {{- end}}
 </div>
 {{- end}}
+{{- end}}
+{{- end}}
+
+{{define "release" -}}
+{{- if .Err}}
+<p class="text-sm break-words text-red-600 dark:text-red-400">{{.Err}}</p>
+{{- else}}
+{{- with .Content}}
+<p class="mb-3 text-xs text-slate-500">
+  Revision {{.Revision}} of <span class="font-mono">{{.Chart}}</span>, <span class="{{releaseStatusClass .Status}}">{{.Status}}</span>,
+  stored in Secret <span class="font-mono break-all">{{.Namespace}}/sh.helm.release.v1.{{.Name}}.v{{.Revision}}</span>.
+</p>
+{{- end}}
+<div class="divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+  <details class="group/release" open>
+    <summary class="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm select-none hover:bg-slate-50 dark:hover:bg-slate-800/40">
+      <svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 shrink-0 text-slate-400 transition-transform group-open/release:rotate-90" aria-hidden="true"><path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 0 1 .02-1.06L11.17 10 7.23 6.29a.75.75 0 1 1 1.04-1.08l4.5 4.25a.75.75 0 0 1 0 1.08l-4.5 4.25a.75.75 0 0 1-1.06-.02Z" clip-rule="evenodd"/></svg>
+      <span class="font-medium">Values</span>
+      <span class="text-xs text-slate-500">passed by Flux, without the chart's defaults</span>
+      {{- if .ValuesTruncated}}<span class="ml-auto text-xs text-amber-700 dark:text-amber-400">first 4 MiB shown</span>{{end}}
+    </summary>
+    {{- if .Values}}
+    <pre class="max-h-[32rem] overflow-auto bg-slate-50 p-3 font-mono text-xs leading-5 text-slate-700 dark:bg-slate-950 dark:text-slate-300">{{.Values}}</pre>
+    {{- else}}
+    <p class="px-3 pb-2 text-sm text-slate-500">No values: the chart's defaults apply.</p>
+    {{- end}}
+  </details>
+  <details class="group/release">
+    <summary class="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm select-none hover:bg-slate-50 dark:hover:bg-slate-800/40">
+      <svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 shrink-0 text-slate-400 transition-transform group-open/release:rotate-90" aria-hidden="true"><path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 0 1 .02-1.06L11.17 10 7.23 6.29a.75.75 0 1 1 1.04-1.08l4.5 4.25a.75.75 0 0 1 0 1.08l-4.5 4.25a.75.75 0 0 1-1.06-.02Z" clip-rule="evenodd"/></svg>
+      <span class="font-medium">Manifest</span>
+      <span class="text-xs text-slate-500">{{byteSize .ManifestSize}}, without hooks</span>
+      {{- if .ManifestTruncated}}<span class="ml-auto text-xs text-amber-700 dark:text-amber-400">first 4 MiB shown</span>{{end}}
+    </summary>
+    <pre class="max-h-[32rem] overflow-auto bg-slate-50 p-3 font-mono text-xs leading-5 text-slate-700 dark:bg-slate-950 dark:text-slate-300">{{.Manifest}}</pre>
+  </details>
+</div>
 {{- end}}
 {{- end}}

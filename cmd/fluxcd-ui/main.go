@@ -41,6 +41,7 @@ func main() {
 	controllerLogs := flag.Bool("controller-logs", true, "offer the Flux controllers' logs about an object in its drawer (requires reading pods and pods/log in --flux-namespace)")
 	artifactBrowser := flag.Bool("artifact-browser", true, "offer to browse the files of a source's artifact (anyone who can reach the UI can then read them)")
 	diffEnabled := flag.Bool("diff", true, "offer to diff a Kustomization's source with the cluster (requires reaching source-controller's artifacts, and read access to the managed objects)")
+	releaseContent := flag.Bool("helm-release-content", false, "offer the values and manifest of a HelmRelease's current Helm release to users allowed to inspect it (requires reading Secrets wherever releases are stored; values may hold credentials)")
 	managedStatus := flag.Bool("managed-objects-status", true, "show the health of the objects a Kustomization or HelmRelease manages (requires read access to them, e.g. the built-in view ClusterRole)")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse() // also parses --kubeconfig, registered by controller-runtime
@@ -65,6 +66,7 @@ func main() {
 		ManagedStatus:   *managedStatus,
 		Diff:            *diffEnabled,
 		ArtifactBrowser: *artifactBrowser,
+		ReleaseContent:  *releaseContent,
 	}
 	if err := checkAuthorization(*authorization, *userHeader, *subjectPrefix); err != nil {
 		fmt.Fprintln(os.Stderr, err)

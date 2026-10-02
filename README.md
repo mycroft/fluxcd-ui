@@ -49,6 +49,7 @@ Flags:
 | `--diff` | `true` | Offer to diff a Kustomization's source with the cluster. Requires reaching source-controller's artifacts (in the cluster) or the API server's service proxy (outside it), and read access to the managed objects |
 | `--managed-objects-status` | `true` | Show the health of the objects a Kustomization or HelmRelease manages. Requires read access to them |
 | `--controller-logs` | `true` | Offer the controllers' logs about an object in its drawer. Requires `list pods` and `get pods/log` in `--flux-namespace` |
+| `--helm-release-content` | `false` | Offer the values and manifest of a HelmRelease's current Helm release to users allowed to inspect it (see [Inspecting a Helm release](#inspecting-a-helm-release)). Requires `get secrets` wherever releases are stored |
 | `--version` | | Print the version and exit |
 
 Endpoints: `/healthz` returns ok once the process is up. `/readyz` returns ok once every kind has either synced or reported a watch error.
@@ -66,6 +67,7 @@ The chart creates:
 - a Role reading the controllers' pods and logs in `fluxNamespace` (`logs.enabled`),
 - a NetworkPolicy in `fluxNamespace` letting fluxcd-ui fetch artifacts from source-controller, for the diff and the artifact browser; Flux's default NetworkPolicies only open source-controller to the Flux namespace (`diff.networkPolicy.create`),
 - a binding to the built-in `view` ClusterRole, to check the health of managed objects and diff them (`managedObjects.status.enabled`, `diff.enabled`). `view` reads most resources but never Secrets; kinds it does not cover show as "no access" unless you grant them with `managedObjects.status.extraRules`,
+- a ClusterRole reading Secrets, and its binding, to show Helm releases' values and manifests (`helmRelease.content.enabled`, off by default),
 - a Deployment that runs as non-root with a read-only root filesystem and all capabilities dropped,
 - a Service, and an optional Ingress.
 
@@ -102,6 +104,20 @@ It is read-only, so it is an approximation of what a server-side apply would do.
 - objects kustomize-controller would not apply (`kustomize.toolkit.fluxcd.io/reconcile: disabled`, `kustomize.toolkit.fluxcd.io/ssa: Ignore`).
 
 A `postBuild.substituteFrom` referencing a Secret makes the diff fail, as fluxcd-ui cannot read Secrets.
+
+## Inspecting a Helm release
+
+With `helmRelease.content.enabled=true` (`--helm-release-content`), a HelmRelease's drawer can load the values and the rendered manifest of its current Helm release, as `helm get values` and `helm get manifest` would show them:
+
+- the release is the latest revision in the HelmRelease's `status.history`, read from the Secret Helm stores it in: `sh.helm.release.v1.<release>.v<revision>`, in the namespace helm-controller recorded in `status.storageNamespace`. fluxcd-ui checks the Secret holds that very release,
+- the values are those Flux passed to Helm, `spec.values` merged with `spec.valuesFrom`, without the chart's defaults,
+- the manifest leaves out hooks; values and manifest are shown up to 4 MiB each.
+
+Release values often hold credentials, and RBAC cannot narrow Secrets down by type, so this is off by default:
+
+- the chart then grants `get` on every Secret of the cluster. fluxcd-ui only reads Secrets of type `helm.sh/release.v1`, named after a HelmRelease's current release,
+- with `authorization.mode=rbac`, only users granted the `inspect` verb on the HelmRelease can load it (see [below](#authorization-with-kubernetes-rbac)); with `none`, everyone who can reach the UI can. When a user header is configured, it is required either way,
+- every read is logged with the user.
 
 ## Actions and authentication
 
@@ -190,21 +206,22 @@ Traffic from the pod's own node, such as kubelet probes, is always allowed.
 
 ### Authorization with Kubernetes RBAC
 
-With `authorization.mode=rbac` (`--authorization=rbac`), fluxcd-ui checks Kubernetes RBAC before each action. It asks the API server, with a SubjectAccessReview, whether the proxy's user and groups are granted a verb on the object:
+With `authorization.mode=rbac` (`--authorization=rbac`), fluxcd-ui checks Kubernetes RBAC before each action, and before showing a Helm release's content. It asks the API server, with a SubjectAccessReview, whether the proxy's user and groups are granted a verb on the object:
 
 | Action | Verb checked |
 |---|---|
 | Reconcile | `reconcile` on the object |
 | Reconcile with source | `reconcile` on the object and on each source it refreshes (a HelmRelease's own HelmChart is covered by the HelmRelease) |
 | Suspend, Resume | `suspend` on the object |
+| Load a Helm release's values and manifest | `inspect` on the HelmRelease |
 
-These verbs mean nothing to the API server. They only let fluxcd-ui act on the user's behalf, so granting them gives nobody direct API access. The changes themselves are still made with fluxcd-ui's service account.
+These verbs mean nothing to the API server. They only let fluxcd-ui act on the user's behalf, so granting them gives nobody direct API access. The changes themselves are still made, and releases read, with fluxcd-ui's service account.
 
 The drawer only shows the buttons the user may use. Those answers are cached for 30 seconds, and every action is checked again uncached. The UI stays read-only for everyone else.
 
 User and group names are prefixed with `authorization.subjectPrefix` (default `fluxcd-ui:`) before the check. That way, a header can never name a built-in identity such as `system:masters`. If your API server authenticates kubectl users with the same identity provider, you can set the prefix to the API server's OIDC prefix (e.g. `oidc:`), so the same names appear in both places.
 
-The chart creates two ClusterRoles to bind: `fluxcd-ui-operator` (reconcile, suspend) and `fluxcd-ui-reconciler` (reconcile), named after the release (here `fluxcd-ui`). For example:
+The chart creates three ClusterRoles to bind: `fluxcd-ui-operator` (reconcile, suspend), `fluxcd-ui-reconciler` (reconcile) and `fluxcd-ui-inspector` (inspect), named after the release (here `fluxcd-ui`). Reading a release's values reveals the credentials they often hold, so `inspect` comes with no other role: bind `fluxcd-ui-inspector` on top. For example:
 
 ```yaml
 # Flux admins: everything, everywhere.
@@ -222,6 +239,15 @@ metadata:
   name: fluxcd-ui-team-a
   namespace: apps
 roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: fluxcd-ui-reconciler}
+subjects: [{apiGroup: rbac.authorization.k8s.io, kind: Group, name: "fluxcd-ui:team-a"}]
+---
+# team-a may also read the values of its own Helm releases.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fluxcd-ui-team-a-inspect
+  namespace: apps
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: fluxcd-ui-inspector}
 subjects: [{apiGroup: rbac.authorization.k8s.io, kind: Group, name: "fluxcd-ui:team-a"}]
 ```
 

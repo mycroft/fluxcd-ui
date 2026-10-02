@@ -32,10 +32,11 @@
   });
 
   // Swap 404 responses into the drawer, so a deleted object shows as such,
-  // and action errors, which come with a toast explaining them.
+  // refusals (401, 403), which explain themselves, and action errors, which
+  // come with a toast explaining them.
   document.addEventListener('htmx:beforeSwap', (e) => {
     const { xhr, target, requestConfig } = e.detail;
-    if ((xhr.status === 404 && target.closest('#drawer')) || requestConfig?.elt?.closest('[data-action]')) {
+    if (([401, 403, 404].includes(xhr.status) && target.closest('#drawer')) || requestConfig?.elt?.closest('[data-action]')) {
       e.detail.shouldSwap = true;
       e.detail.isError = false;
     }

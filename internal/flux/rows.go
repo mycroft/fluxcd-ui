@@ -144,7 +144,7 @@ func describeHelmRelease(o *helmv2.HelmRelease) Detail {
 		source = sourceRef(s.SourceRef.Kind, s.SourceRef.Name, s.SourceRef.Namespace, o.Namespace)
 	}
 
-	latest := latestSnapshot(o.Status.History)
+	latest := LatestSnapshot(o.Status.History)
 	d.Revision = o.Status.LastAttemptedRevision
 	var appVersion string
 	if latest != nil {
@@ -272,9 +272,9 @@ func newDetail(obj client.Object, suspended bool, observedGeneration int64, cond
 	}
 }
 
-// latestSnapshot returns the release snapshot with the highest version.
+// LatestSnapshot returns the release snapshot with the highest version.
 // Snapshots.Latest sorts in place, which would mutate the shared cached object.
-func latestSnapshot(history helmv2.Snapshots) *helmv2.Snapshot {
+func LatestSnapshot(history helmv2.Snapshots) *helmv2.Snapshot {
 	var latest *helmv2.Snapshot
 	for _, s := range history {
 		if s != nil && (latest == nil || s.Version > latest.Version) {

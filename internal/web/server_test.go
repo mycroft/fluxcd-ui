@@ -131,6 +131,20 @@ func (b testBackend) ControllerLogs(_ context.Context, k flux.Kind, namespace, n
 	return nil, errors.New(`pods is forbidden: cannot list resource "pods"`)
 }
 
+// testRelease is what testBackend serves as apps/podinfo's Helm release.
+var testRelease = &store.ReleaseContent{
+	Name: "podinfo", Namespace: "apps", Revision: 3, Chart: "podinfo@6.5.0", Status: "deployed",
+	Values:   "replicaCount: 2\n# <script>alert(1)</script>\n",
+	Manifest: "---\nkind: Deployment\n",
+}
+
+func (b testBackend) HelmReleaseContent(_ context.Context, namespace, name string) (*store.ReleaseContent, error) {
+	if namespace == "apps" && name == "podinfo" {
+		return testRelease, nil
+	}
+	return nil, store.ErrNoRelease
+}
+
 func newTestServer(t *testing.T, notReady bool) (*Server, *store.Broker) {
 	t.Helper()
 	srv, broker, _ := newTestServerWith(t, notReady, Options{Version: "test"})
@@ -657,6 +671,49 @@ func TestArtifactBrowserDisabled(t *testing.T) {
 	assertNotContains(t, body, "Source artifact")
 	if res, _ := get(t, srv, "/objects/gitrepositories/flux-system/flux-system/artifact"); res.StatusCode != http.StatusNotFound {
 		t.Errorf("artifact status = %d, want 404", res.StatusCode)
+	}
+}
+
+func TestReleaseContent(t *testing.T) {
+	srv, _, _ := newTestServerWith(t, false, Options{ReleaseContent: true})
+
+	_, body := get(t, srv, "/objects/helmreleases/apps/podinfo")
+	assertContains(t, body, "Values and manifest", `hx-get="/objects/helmreleases/apps/podinfo/release"`)
+	assertNotContains(t, body, "not allowed to inspect")
+	_, body = get(t, srv, "/objects/kustomizations/flux-system/apps")
+	assertNotContains(t, body, "Values and manifest") // not a HelmRelease
+
+	res, body := get(t, srv, "/objects/helmreleases/apps/podinfo/release")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", res.StatusCode)
+	}
+	if cc := res.Header.Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", cc)
+	}
+	assertContains(t, body, "Revision 3 of", "podinfo@6.5.0", "apps/sh.helm.release.v1.podinfo.v3",
+		"replicaCount: 2", "&lt;script&gt;alert(1)&lt;/script&gt;", "kind: Deployment", "21 B, without hooks")
+	assertNotContains(t, body, "<script>alert", "first 4 MiB shown")
+
+	_, body = get(t, srv, "/objects/helmreleases/monitoring/grafana/release")
+	assertContains(t, body, "this HelmRelease has no Helm release yet")
+}
+
+func TestReleaseContentDisabled(t *testing.T) {
+	srv, _ := newTestServer(t, false)
+	_, body := get(t, srv, "/objects/helmreleases/apps/podinfo")
+	assertNotContains(t, body, "Values and manifest")
+	if res, _ := get(t, srv, "/objects/helmreleases/apps/podinfo/release"); res.StatusCode != http.StatusNotFound {
+		t.Errorf("release status = %d, want 404", res.StatusCode)
+	}
+}
+
+func TestTruncate(t *testing.T) {
+	if got, cut := truncate("héllo", 10); got != "héllo" || cut {
+		t.Errorf("short: %q, %t", got, cut)
+	}
+	// "é" is two bytes: cutting inside it backs off to the rune start.
+	if got, cut := truncate("héllo", 2); got != "h" || !cut {
+		t.Errorf("mid-rune: %q, %t", got, cut)
 	}
 }
 

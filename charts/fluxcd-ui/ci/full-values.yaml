@@ -2,6 +2,9 @@
 fluxNamespace: flux
 logs:
   enabled: true
+helmRelease:
+  content:
+    enabled: true
 managedObjects:
   status:
     enabled: true

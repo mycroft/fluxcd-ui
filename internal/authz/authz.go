@@ -21,6 +21,9 @@ import (
 const (
 	VerbReconcile = "reconcile"
 	VerbSuspend   = "suspend" // also covers resume
+	// VerbInspect lets a user read a HelmRelease's Helm release: its values,
+	// which may hold credentials, and its rendered manifest.
+	VerbInspect = "inspect"
 )
 
 // Identity is a user, and their groups, as vouched for by the authenticating
