@@ -68,6 +68,13 @@ type Detail struct {
 	Inventory    []InventoryGroup
 	// History lists a HelmRelease's Helm release revisions, newest first.
 	History []Release
+	// HasDependencies reports whether the kind can depend on other objects
+	// of its kind (spec.dependsOn): Kustomizations and HelmReleases.
+	HasDependencies bool
+	// DependsOn lists the objects this one waits for, and RequiredBy those
+	// waiting for it; the store resolves their state.
+	DependsOn  []Dependency
+	RequiredBy []Dependency
 }
 
 // Release is one Helm release revision of a HelmRelease.

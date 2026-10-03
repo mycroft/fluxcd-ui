@@ -182,7 +182,6 @@ func describeHelmRelease(o *helmv2.HelmRelease) Detail {
 	if o.Status.Failures > 0 {
 		f.add("Failures", strconv.FormatInt(o.Status.Failures, 10))
 	}
-	f.add("Depends on", dependsOn(o.Spec.DependsOn, o.Namespace))
 	f.addSchedule(o.Spec.Interval, o.Spec.Timeout)
 	d.Fields = f
 
@@ -195,6 +194,7 @@ func describeHelmRelease(o *helmv2.HelmRelease) Detail {
 		d.Inventory = groupInventory(refs)
 	}
 	d.History = releaseHistory(o.Status.History)
+	d.HasDependencies, d.DependsOn = true, DependenciesOf(o)
 	return d
 }
 
@@ -240,7 +240,6 @@ func describeKustomization(o *kustomizev1.Kustomization) Detail {
 	f.add("Prune", strconv.FormatBool(o.Spec.Prune))
 	f.addMono("Last applied revision", o.Status.LastAppliedRevision)
 	f.addMono("Last attempted revision", o.Status.LastAttemptedRevision)
-	f.add("Depends on", dependsOn(o.Spec.DependsOn, o.Namespace))
 	f.addSchedule(o.Spec.Interval, o.Spec.Timeout)
 	d.Fields = f
 
@@ -252,6 +251,7 @@ func describeKustomization(o *kustomizev1.Kustomization) Detail {
 		}
 		d.Inventory = groupInventory(refs)
 	}
+	d.HasDependencies, d.DependsOn = true, DependenciesOf(o)
 	return d
 }
 
@@ -346,18 +346,6 @@ func sourceRef(kind, name, namespace, objNamespace string) string {
 		return kind + "/" + namespace + "/" + name
 	}
 	return kind + "/" + name
-}
-
-func dependsOn(deps []meta.DependencyReference, objNamespace string) string {
-	names := make([]string, 0, len(deps))
-	for _, dep := range deps {
-		if dep.Namespace != "" && dep.Namespace != objNamespace {
-			names = append(names, dep.Namespace+"/"+dep.Name)
-		} else {
-			names = append(names, dep.Name)
-		}
-	}
-	return strings.Join(names, ", ")
 }
 
 // fields accumulates detail fields, skipping empty values.

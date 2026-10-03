@@ -54,6 +54,7 @@ type Backend interface {
 	ArtifactFile(ctx context.Context, k flux.Kind, namespace, name, path string) (*artifact.Content, error)
 	HelmReleaseContent(ctx context.Context, namespace, name string) (*store.ReleaseContent, error)
 	ObjectYAML(ctx context.Context, k flux.Kind, namespace, name string) (string, error)
+	ResolveDependencies(ctx context.Context, k flux.Kind, d *flux.Detail) error
 }
 
 // Options configures a Server.
@@ -368,6 +369,9 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request) {
 		s.log.Error("getting object", "kind", k.ID, "namespace", d.Namespace, "name", d.Name, "err", err)
 		http.Error(w, "failed to get object", http.StatusInternalServerError)
 	default:
+		if err := s.backend.ResolveDependencies(r.Context(), k, &detail); err != nil {
+			s.log.Warn("resolving dependencies", "kind", k.ID, "namespace", d.Namespace, "name", d.Name, "err", err)
+		}
 		d.Detail = detail
 		d.Events = s.backend.Events(r.Context(), s.backend.Related(r.Context(), k, d.Namespace, d.Name)...)
 		d.Browse = s.opts.ArtifactBrowser && detail.HasArtifact

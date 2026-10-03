@@ -14,7 +14,7 @@ Supported kinds:
 
 Kustomization and HelmRelease rows also show the state of their source, and call out one that has failed or is missing: a Kustomization's GitRepository, OCIRepository or Bucket; a HelmRelease's HelmChart (the one helm-controller generates from `spec.chart`, whose state covers fetching the chart), or the OCIRepository or HelmChart its `spec.chartRef` names.
 
-Clicking an object opens a detail drawer: its key fields, conditions, the recent Kubernetes Events of the object and of the sources it reconciles from, the objects a Kustomization or HelmRelease manages and their health (from its inventory, with links to the Flux objects among them), a Kustomization's diff between its source and the cluster, a browser for the files of a source's artifact, a HelmRelease's release history, and, on demand, the object's YAML and what its Flux controller recently logged about it.
+Clicking an object opens a detail drawer: its key fields, conditions, the recent Kubernetes Events of the object and of the sources it reconciles from, the objects a Kustomization or HelmRelease manages and their health (from its inventory, with links to the Flux objects among them), the objects it depends on (`dependsOn`) and those depending on it, with their state, a Kustomization's diff between its source and the cluster, a browser for the files of a source's artifact, a HelmRelease's release history, and, on demand, the object's YAML and what its Flux controller recently logged about it.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/helmrelease-dark.png">

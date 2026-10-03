@@ -146,6 +146,24 @@
     </dl>
   </section>
 
+  {{- if or .DependsOn .RequiredBy}}
+  <section>
+    <h3 class="mb-3 text-xs font-semibold tracking-wide text-slate-500 uppercase">Dependencies</h3>
+    {{- with .DependsOn}}
+    <p class="mb-1.5 text-xs text-slate-500">Depends on</p>
+    <ul class="mb-3 divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+      {{- range .}}{{template "dependency" .}}{{end}}
+    </ul>
+    {{- end}}
+    {{- with .RequiredBy}}
+    <p class="mb-1.5 text-xs text-slate-500">Required by</p>
+    <ul class="divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+      {{- range .}}{{template "dependency" .}}{{end}}
+    </ul>
+    {{- end}}
+  </section>
+  {{- end}}
+
   <section>
     <h3 class="mb-3 text-xs font-semibold tracking-wide text-slate-500 uppercase">Conditions</h3>
     {{- if .Conditions}}
@@ -533,4 +551,24 @@
 {{- else}}
 <pre class="max-h-[32rem] overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 font-mono text-xs leading-5 text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">{{.YAML}}</pre>
 {{- end}}
+{{- end}}
+
+{{define "dependency" -}}
+<li class="px-3 py-2 text-sm">
+  <div class="flex items-center gap-2">
+    <span class="size-1.5 shrink-0 rounded-full {{dotClass .State}}" aria-hidden="true"></span>
+    {{- if .Found}}
+    <button type="button" class="truncate text-left text-indigo-600 hover:underline dark:text-indigo-400" hx-get="/objects/{{.Kind}}/{{.Namespace}}/{{.Name}}" hx-target="#drawer" hx-swap="innerHTML"><span class="text-slate-400 dark:text-slate-500">{{.Namespace}}/</span>{{.Name}}</button>
+    {{- else}}
+    <span class="truncate"><span class="text-slate-400 dark:text-slate-500">{{.Namespace}}/</span>{{.Name}}</span>
+    {{- end}}
+    <span class="ml-auto shrink-0 text-xs {{or (messageClass .State) "text-slate-500"}}">{{if .Found}}{{.Status.State}}{{else}}Not found{{end}}</span>
+  </div>
+  {{- if and .Found (not .OK) .Status.Message}}
+  <p class="mt-1 truncate pl-3.5 text-xs text-slate-500" title="{{.Status.Message}}">{{.Status.Message}}</p>
+  {{- end}}
+  {{- with .ReadyExpr}}
+  <p class="mt-1 pl-3.5 font-mono text-xs break-all text-slate-500" title="Flux evaluates this expression instead of the dependency's Ready condition">ready when: {{.}}</p>
+  {{- end}}
+</li>
 {{- end}}

@@ -759,6 +759,34 @@ func TestHelmReleaseRowsShowChartState(t *testing.T) {
 	assertContains(t, body, `title="OCIRepository/podinfo">OCIRepository/podinfo</td>`)
 }
 
+func TestDrawerShowsDependencies(t *testing.T) {
+	ks := func(name string, conds []metav1.Condition, deps ...meta.DependencyReference) *kustomizev1.Kustomization {
+		return &kustomizev1.Kustomization{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "flux-system", Name: name},
+			Spec:       kustomizev1.KustomizationSpec{DependsOn: deps},
+			Status:     kustomizev1.KustomizationStatus{Conditions: conds},
+		}
+	}
+	srv, _, _ := newTestServerWith(t, false, Options{},
+		ks("infra", failed("CRDs <not> installed")),
+		ks("platform", ready(), meta.DependencyReference{Name: "infra"}, meta.DependencyReference{Name: "gone", ReadyExpr: "status.phase == 'Done'"}),
+		ks("monitoring", ready(), meta.DependencyReference{Name: "platform"}),
+	)
+
+	_, body := get(t, srv, "/objects/kustomizations/flux-system/platform")
+	assertContains(t, body, "Dependencies", "Depends on", "Required by",
+		`hx-get="/objects/kustomizations/flux-system/infra"`,      // a link to the dependency
+		"CRDs &lt;not&gt; installed",                              // its message, as it is failing
+		"Not found",                                               // a missing one
+		"ready when: status.phase == &#39;Done&#39;",              // a custom readiness check
+		`hx-get="/objects/kustomizations/flux-system/monitoring"`) // what waits for it
+	assertNotContains(t, body, `hx-get="/objects/kustomizations/flux-system/gone"`) // nothing to open
+
+	// Without dependencies either way, no section.
+	_, body = get(t, srv, "/objects/gitrepositories/flux-system/flux-system")
+	assertNotContains(t, body, "Dependencies")
+}
+
 func TestYAMLView(t *testing.T) {
 	odd := &kustomizev1.Kustomization{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "odd"},
