@@ -21,6 +21,16 @@ auth:
   signOutURL: /outpost.goauthentik.io/sign_out
 authorization:
   mode: rbac
+  bindings:
+    - role: operator
+      groups: ["authentik Admins"]
+    - role: reconciler
+      groups: ["team-a"]
+      users: ["alice"]
+      namespaces: ["apps", "web"]
+    - role: inspector
+      groups: ["team-a"]
+      namespaces: ["apps"]
 imagePullSecrets:
   - name: registry-credentials
 serviceAccount:

@@ -17,7 +17,12 @@ and open http://localhost:8080
 Actions (suspend, resume, reconcile) are ENABLED.
 {{- if eq .Values.authorization.mode "rbac" }}
 Only users granted the "reconcile"/"suspend" verbs by Kubernetes RBAC may act.
-Bind {{ include "fluxcd-ui.fullname" . }}-operator or -reconciler to groups prefixed with "{{ .Values.authorization.subjectPrefix }}".
+{{- if .Values.authorization.bindings }}
+{{ len .Values.authorization.bindings }} binding(s) from authorization.bindings grant them.
+{{- else }}
+Grant them with authorization.bindings, or bind {{ include "fluxcd-ui.fullname" . }}-operator,
+-reconciler or -inspector yourself, to groups prefixed with "{{ .Values.authorization.subjectPrefix }}".
+{{- end }}
 {{- end }}
 {{- if not .Values.auth.userHeader }}
 WARNING: auth.userHeader is not set, so anyone who can reach the UI can

@@ -78,7 +78,7 @@ kubectl -n fluxcd-ui port-forward svc/fluxcd-ui 8080:80
 The chart creates:
 - a ServiceAccount,
 - a read-only ClusterRole on Flux objects and events, and its binding (`rbac.create`); `actions.enabled` adds `patch`, and `authorization.mode=rbac` adds creating SubjectAccessReviews,
-- with `authorization.mode=rbac`, three ClusterRoles to bind to your users and groups (`authorization.createRoles`, see [Authorization with Kubernetes RBAC](#authorization-with-kubernetes-rbac)),
+- with `authorization.mode=rbac`, three ClusterRoles to bind to your users and groups (`authorization.createRoles`), and the bindings listed in `authorization.bindings` (see [Authorization with Kubernetes RBAC](#authorization-with-kubernetes-rbac)),
 - a Role reading the controllers' pods and logs in `fluxNamespace` (`logs.enabled`),
 - a NetworkPolicy in `fluxNamespace` letting fluxcd-ui fetch artifacts from source-controller, for the diff and the artifact browser; Flux's default NetworkPolicies only open source-controller to the Flux namespace (`diff.networkPolicy.create`),
 - a binding to the built-in `view` ClusterRole, to check the health of managed objects and diff them (`managedObjects.status.enabled`, `diff.enabled`). `view` reads most resources but never Secrets; kinds it does not cover show as "no access" unless you grant them with `managedObjects.status.extraRules`,
@@ -249,34 +249,36 @@ The drawer only shows the buttons the user may use. Those answers are cached for
 
 User and group names are prefixed with `authorization.subjectPrefix` (default `fluxcd-ui:`) before the check. That way, a header can never name a built-in identity such as `system:masters`. If your API server authenticates kubectl users with the same identity provider, you can set the prefix to the API server's OIDC prefix (e.g. `oidc:`), so the same names appear in both places.
 
-The chart creates three ClusterRoles to bind: `fluxcd-ui-operator` (reconcile, suspend), `fluxcd-ui-reconciler` (reconcile) and `fluxcd-ui-inspector` (inspect), named after the release (here `fluxcd-ui`). Reading a release's values reveals the credentials they often hold, so `inspect` comes with no other role: bind `fluxcd-ui-inspector` on top. For example:
+The chart creates three ClusterRoles to bind: `fluxcd-ui-operator` (reconcile, suspend), `fluxcd-ui-reconciler` (reconcile) and `fluxcd-ui-inspector` (inspect), named after the release (here `fluxcd-ui`). Reading a release's values reveals the credentials they often hold, so `inspect` comes with no other role: bind `fluxcd-ui-inspector` on top.
+
+Bind them with `authorization.bindings`, naming groups and users as the proxy sends them: the chart adds the prefix. A binding without `namespaces` applies cluster-wide (a ClusterRoleBinding); with them, the chart creates a RoleBinding in each:
 
 ```yaml
-# Flux admins: everything, everywhere.
+authorization:
+  mode: rbac
+  bindings:
+    # Flux admins: everything, everywhere.
+    - role: operator
+      groups: ["flux-admins"]
+    # team-a: reconcile only, in its own namespace...
+    - role: reconciler
+      groups: ["team-a"]
+      namespaces: ["apps"]
+    # ...and read the values of its own Helm releases.
+    - role: inspector
+      groups: ["team-a"]
+      namespaces: ["apps"]
+```
+
+To manage RBAC elsewhere, bind the roles yourself, with the prefix:
+
+```yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: fluxcd-ui-flux-admins
 roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: fluxcd-ui-operator}
 subjects: [{apiGroup: rbac.authorization.k8s.io, kind: Group, name: "fluxcd-ui:flux-admins"}]
----
-# team-a: reconcile only, in its own namespace.
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: fluxcd-ui-team-a
-  namespace: apps
-roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: fluxcd-ui-reconciler}
-subjects: [{apiGroup: rbac.authorization.k8s.io, kind: Group, name: "fluxcd-ui:team-a"}]
----
-# team-a may also read the values of its own Helm releases.
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: fluxcd-ui-team-a-inspect
-  namespace: apps
-roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: fluxcd-ui-inspector}
-subjects: [{apiGroup: rbac.authorization.k8s.io, kind: Group, name: "fluxcd-ui:team-a"}]
 ```
 
 Check a grant from the command line (kubectl warns that the verb is unknown, which is expected for custom verbs):

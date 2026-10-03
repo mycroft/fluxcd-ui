@@ -117,6 +117,17 @@ authorization:
   # <fullname>-reconciler (reconcile) and <fullname>-inspector (inspect)
   # ClusterRoles, ready to bind to groups.
   createRoles: true
+  # Bind those roles to the proxy's groups and users, written as the proxy
+  # sends them: the chart adds subjectPrefix. Without namespaces, a binding
+  # applies cluster-wide (a ClusterRoleBinding); with them, a RoleBinding in
+  # each. For example:
+  #   - role: operator              # operator, reconciler or inspector
+  #     groups: ["flux-admins"]
+  #   - role: reconciler
+  #     groups: ["team-a"]
+  #     users: ["alice"]
+  #     namespaces: ["apps"]
+  bindings: []
 
 # debug, info, warn or error
 logLevel: info

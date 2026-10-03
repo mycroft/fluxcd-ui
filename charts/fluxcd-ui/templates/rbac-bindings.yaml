@@ -1,0 +1,49 @@
+{{- if and .Values.rbac.create .Values.authorization.bindings -}}
+{{- if ne .Values.authorization.mode "rbac" }}
+{{- fail "authorization.bindings only applies with authorization.mode=rbac" }}
+{{- end }}
+{{- if not .Values.authorization.createRoles }}
+{{- fail "authorization.bindings binds the roles authorization.createRoles creates: enable it, or bind your own roles yourself" }}
+{{- end }}
+# Bindings for authorization.mode=rbac: who may act through fluxcd-ui, and
+# where. Subjects get authorization.subjectPrefix, as fluxcd-ui adds it to the
+# user and groups it checks.
+{{- $fullname := include "fluxcd-ui.fullname" . }}
+{{- $prefix := .Values.authorization.subjectPrefix }}
+{{- range $i, $b := .Values.authorization.bindings }}
+{{- $role := $b.role | default "" }}
+{{- if not (has $role (list "operator" "reconciler" "inspector")) }}
+{{- fail (printf "authorization.bindings[%d].role must be operator, reconciler or inspector, not %q" $i $role) }}
+{{- end }}
+{{- if not (or $b.groups $b.users) }}
+{{- fail (printf "authorization.bindings[%d] needs groups or users" $i) }}
+{{- end }}
+{{- range $namespace := $b.namespaces | default (list "") }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: {{ if $namespace }}RoleBinding{{ else }}ClusterRoleBinding{{ end }}
+metadata:
+  name: {{ printf "%s-%s-%d" $fullname $role $i }}
+  {{- with $namespace }}
+  namespace: {{ . }}
+  {{- end }}
+  labels:
+    {{- include "fluxcd-ui.labels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ printf "%s-%s" $fullname $role }}
+subjects:
+  {{- range $b.groups }}
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: {{ printf "%s%s" $prefix . | quote }}
+  {{- end }}
+  {{- range $b.users }}
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: {{ printf "%s%s" $prefix . | quote }}
+  {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
