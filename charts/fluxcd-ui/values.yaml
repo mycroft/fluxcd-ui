@@ -95,6 +95,11 @@ auth:
   # separator ",").
   groupsHeader: ""
   groupsSeparator: ","
+  # Sign-out endpoint of the proxy, linked next to the user's name. The proxy
+  # keeps the user's groups for the length of its session: signing out picks
+  # up changes made in the identity provider. /outpost.goauthentik.io/sign_out
+  # (authentik), /oauth2/sign_out (oauth2-proxy).
+  signOutURL: ""
 
 authorization:
   # Who may act when actions are enabled, and inspect Helm releases when

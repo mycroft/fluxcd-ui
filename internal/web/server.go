@@ -84,6 +84,10 @@ type Options struct {
 	ReleaseContent bool
 	// YAMLView offers each object as YAML in its drawer.
 	YAMLView bool
+	// SignOutURL, when set, is linked next to the user's name: the
+	// authenticating proxy's sign-out endpoint, which ends the session it
+	// keeps (and with it, the user's groups as of signing in).
+	SignOutURL string
 }
 
 // Server is the HTTP handler of the UI.
@@ -195,6 +199,7 @@ type page struct {
 	Namespaces []string
 	Version    string
 	User       string
+	SignOutURL string
 	Theme      string // "light" or "dark" when chosen with the toggle; empty follows the OS
 }
 
@@ -264,7 +269,7 @@ func (s *Server) loadSection(ctx context.Context, k flux.Kind, f Filter) (sectio
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	p := s.buildPage(r.Context(), parseFilter(r))
-	p.User = s.user(r)
+	p.User, p.SignOutURL = s.user(r), s.opts.SignOutURL
 	p.Theme = theme(r)
 	s.render(w, http.StatusOK, "index", p)
 }

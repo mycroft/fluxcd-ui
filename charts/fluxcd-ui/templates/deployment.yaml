@@ -49,6 +49,9 @@ spec:
             {{- with .Values.auth.userHeader }}
             - {{ printf "--user-header=%s" . | quote }}
             {{- end }}
+            {{- with .Values.auth.signOutURL }}
+            - {{ printf "--sign-out-url=%s" . | quote }}
+            {{- end }}
             {{- with .Values.auth.groupsHeader }}
             - {{ printf "--groups-header=%s" . | quote }}
             - {{ printf "--groups-separator=%s" $.Values.auth.groupsSeparator | quote }}

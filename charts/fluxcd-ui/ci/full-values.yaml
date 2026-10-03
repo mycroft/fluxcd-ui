@@ -18,6 +18,7 @@ auth:
   userHeader: X-authentik-username
   groupsHeader: X-authentik-groups
   groupsSeparator: "|"
+  signOutURL: /outpost.goauthentik.io/sign_out
 authorization:
   mode: rbac
 imagePullSecrets:

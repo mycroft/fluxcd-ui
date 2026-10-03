@@ -163,4 +163,21 @@ func TestUserHeader(t *testing.T) {
 	srv.ServeHTTP(rec, req)
 	b, _ := io.ReadAll(rec.Result().Body)
 	assertContains(t, string(b), `title="Signed in"`, "alice")
+	assertNotContains(t, string(b), "Sign out") // no sign-out URL configured
+}
+
+func TestSignOutLink(t *testing.T) {
+	srv, _, _ := newTestServerWith(t, false, Options{UserHeader: "X-authentik-username", SignOutURL: "/outpost.goauthentik.io/sign_out"})
+	page := func(user string) string {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		if user != "" {
+			req.Header.Set("X-Authentik-Username", user) // as authentik sends it, in canonical form
+		}
+		srv.ServeHTTP(rec, req)
+		b, _ := io.ReadAll(rec.Result().Body)
+		return string(b)
+	}
+	assertContains(t, page("alice"), `href="/outpost.goauthentik.io/sign_out"`, "Sign out")
+	assertNotContains(t, page(""), "Sign out") // nobody to sign out
 }

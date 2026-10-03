@@ -54,6 +54,7 @@ Flags:
 | `--user-header` | | Request header carrying the user name set by an authenticating proxy. When set, actions require it |
 | `--groups-header` | | Request header carrying the user's groups set by the proxy |
 | `--groups-separator` | `,` | Separator of the groups header (`\|` for authentik) |
+| `--sign-out-url` | | Sign-out endpoint of the proxy, linked next to the user name (see [Authentication through a proxy](#authentication-through-a-proxy)) |
 | `--authorization` | `none` | Who may act: `none` (every user) or `rbac` (Kubernetes RBAC, see below) |
 | `--subject-prefix` | `fluxcd-ui:` | Prefix added to user and group names before checking RBAC |
 | `--flux-namespace` | `flux-system` | Namespace of the Flux controllers |
@@ -161,15 +162,17 @@ Every action is logged with the object and the user. Actions are POST requests, 
 
 Changes are made with the UI's own service account, so **anyone who can reach the UI can suspend or reconcile anything**. Enable actions only behind an authenticating proxy, and tell the UI which header carries the authenticated user:
 
-| Proxy | `auth.userHeader` | `auth.groupsHeader` (separator) |
-|---|---|---|
-| authentik (proxy provider, forward auth) | `X-authentik-username` | `X-authentik-groups` (`\|`) |
-| oauth2-proxy as a reverse proxy, with `--pass-user-headers` (Okta, Dex, Keycloak, Google, Entra ID…) | `X-Forwarded-User` | `X-Forwarded-Groups` (`,`) |
-| oauth2-proxy with `--set-xauthrequest` behind nginx `auth_request` | `X-Auth-Request-User` | `X-Auth-Request-Groups` (`,`) |
+| Proxy | `auth.userHeader` | `auth.groupsHeader` (separator) | `auth.signOutURL` |
+|---|---|---|---|
+| authentik (proxy provider, forward auth) | `X-authentik-username` | `X-authentik-groups` (`\|`) | `/outpost.goauthentik.io/sign_out` |
+| oauth2-proxy as a reverse proxy, with `--pass-user-headers` (Okta, Dex, Keycloak, Google, Entra ID…) | `X-Forwarded-User` | `X-Forwarded-Groups` (`,`) | `/oauth2/sign_out` |
+| oauth2-proxy with `--set-xauthrequest` behind nginx `auth_request` | `X-Auth-Request-User` | `X-Auth-Request-Groups` (`,`) | `/oauth2/sign_out` |
 
 Groups are only needed for [RBAC authorization](#authorization-with-kubernetes-rbac). The identity provider must put them in its tokens. With Dex, request the `groups` scope. With Okta, add a `groups` claim to the authorization server. With Keycloak, add a group mapper. authentik includes them by default.
 
 With the header configured, actions without it are refused (401), and the user name is logged with each action and shown in the header bar.
+
+The proxy keeps the user's groups for the length of its session, so a change made in the identity provider, such as joining a group, only applies after signing in again. Set `auth.signOutURL` (`--sign-out-url`) to the proxy's sign-out endpoint to add a "Sign out" link next to the user name: it ends the proxy's session, and the next visit picks up the user's current groups.
 
 Example with authentik and Traefik: create a forward-auth Middleware pointing at the outpost, and copy the identity headers onto requests. Traefik replaces client-supplied copies of these headers, so they can't be spoofed through the ingress.
 
@@ -195,6 +198,7 @@ actions:
   enabled: true
 auth:
   userHeader: X-authentik-username
+  signOutURL: /outpost.goauthentik.io/sign_out
 ingress:
   enabled: true
   annotations:

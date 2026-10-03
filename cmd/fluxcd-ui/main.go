@@ -32,6 +32,7 @@ func main() {
 	logLevel := flag.String("log-level", "info", "log level: debug, info, warn or error")
 	logFormat := flag.String("log-format", "text", "log format: text or json")
 	enableActions := flag.Bool("enable-actions", false, "allow suspending, resuming and reconciling objects (requires patch RBAC)")
+	signOutURL := flag.String("sign-out-url", "", "sign-out endpoint of the authenticating proxy, linked next to the user's name, e.g. /outpost.goauthentik.io/sign_out (authentik) or /oauth2/sign_out (oauth2-proxy)")
 	userHeader := flag.String("user-header", "", "request header carrying the user name set by an authenticating proxy, e.g. X-authentik-username; when set, actions require it")
 	groupsHeader := flag.String("groups-header", "", "request header carrying the user's groups set by the proxy, e.g. X-authentik-groups")
 	groupsSeparator := flag.String("groups-separator", ",", `separator of the groups header ("|" for authentik)`)
@@ -61,6 +62,7 @@ func main() {
 		Version:         version,
 		Actions:         *enableActions,
 		UserHeader:      *userHeader,
+		SignOutURL:      *signOutURL,
 		GroupsHeader:    *groupsHeader,
 		GroupsSeparator: *groupsSeparator,
 		Logs:            *controllerLogs,
